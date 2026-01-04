@@ -6,14 +6,6 @@
 
 ## How can I edit this code?
 
-There are several ways of editing your application.
-
-**Use Lovable**
-
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
-
-Changes made via Lovable will be committed automatically to this repo.
-
 **Use your preferred IDE**
 
 If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
@@ -60,21 +52,10 @@ This project is built with:
 - shadcn-ui
 - Tailwind CSS
 
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
-
 ## Supabase (auth & database) setup
 
 - Copy the example env file and fill in your Supabase project values:
+
 
 ```bash
 cp .env.example .env
@@ -107,5 +88,3 @@ npm run dev
 1. Create the database/tables by applying migrations in the `supabase/migrations` directory to your Supabase project.
 2. Deploy functions (or run the local Supabase emulation) and set `SUPABASE_SERVICE_ROLE_KEY` in the function environment.
 3. Add an integration in the UI and copy the webhook URL from the integration modal; configure that in Splunk alerts.
-
-If you want, I can add a small script to help deploy migrations and functions locally — should I add that next?
