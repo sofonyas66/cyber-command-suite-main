@@ -1,0 +1,7 @@
+project_id = "dbrtlfcnzvykhykdnnyr"
+
+[functions.splunk-saved-searches]
+verify_jwt = true
+
+[functions.splunk-webhook]
+verify_jwt = false
