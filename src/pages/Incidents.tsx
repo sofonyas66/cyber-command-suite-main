@@ -194,7 +194,7 @@ export default function Incidents() {
             </div>
             <div>
               <p className="text-2xl font-bold">
-                {demoIncidents.filter((i) => i.status === "investigating").length}
+                {sourceIncidents.filter((i) => i.status === "investigating").length}
               </p>
               <p className="text-xs text-muted-foreground">Investigating</p>
             </div>
@@ -207,7 +207,7 @@ export default function Incidents() {
             </div>
             <div>
               <p className="text-2xl font-bold">
-                {demoIncidents.filter((i) => i.status === "closed").length}
+                {sourceIncidents.filter((i) => i.status === "closed").length}
               </p>
               <p className="text-xs text-muted-foreground">Closed (30d)</p>
             </div>

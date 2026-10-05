@@ -64,7 +64,7 @@ interface TimelineEvent {
   id: string;
   action: string;
   user: string;
-  timestamp: Date;
+  timestamp: string;
   notes?: string;
 }
 
@@ -75,17 +75,17 @@ interface Change {
   title: string;
   description: string;
   risk_level: RiskLevel;
-  impacted_assets: string[];
-  impacted_networks: string[];
-  planned_start: Date;
-  planned_end: Date;
+  impacted_asset_ids: string[];
+  impacted_network_ids: string[];
+  planned_start: string;
+  planned_end: string;
   rollback_plan: string;
   validation_steps: ValidationStep[];
   status: ChangeStatus;
   approver: string;
   evidence_links: string[];
   timeline: TimelineEvent[];
-  created_at: Date;
+  created_at: string;
 }
 
 // Demo data
@@ -245,8 +245,41 @@ export default function Changes() {
   const [typeFilter, setTypeFilter] = useState("all");
   const [selectedChange, setSelectedChange] = useState<Change | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const { activeWorkspace } = useWorkspace();
 
-  const filteredChanges = demoChanges.filter((change) => {
+  const [changes, setChanges] = useState<any[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchChanges = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      let q = supabase
+        .from('changes')
+        .select('id, change_number, change_type, title, description, risk_level, impacted_asset_ids, impacted_network_ids, planned_start, planned_end, rollback_plan, status, approver, evidence_links, validation_steps, timeline, created_at')
+        .order('created_at', { ascending: false })
+        .limit(1000);
+      if (activeWorkspace?.id) q = q.eq('workspace_id', activeWorkspace.id as any);
+      const { data, error } = await q;
+      if (error) throw error;
+      setChanges(data || []);
+    } catch (err: any) {
+      console.error('Failed to load changes', err);
+      setError(err.message || String(err));
+      toast.error('Failed to load changes');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchChanges();
+  }, [activeWorkspace?.id]);
+
+  const sourceChanges = changes === null ? demoChanges : changes;
+
+  const filteredChanges = sourceChanges.filter((change) => {
     const matchesSearch = change.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
     change.change_number.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = statusFilter === "all" || change.status === statusFilter;
@@ -254,11 +287,11 @@ export default function Changes() {
     return matchesSearch && matchesStatus && matchesType;
   });
 
-  const openChanges = demoChanges.filter(c => !["Closed", "Verified"].includes(c.status)).length;
-  const pendingApproval = demoChanges.filter(c => c.status === "Review").length;
-  const implementedToday = demoChanges.filter(c =>
+  const openChanges = sourceChanges.filter(c => !["Closed", "Verified"].includes(c.status)).length;
+  const pendingApproval = sourceChanges.filter(c => c.status === "Review").length;
+  const implementedToday = sourceChanges.filter(c =>
   c.status === "Implemented" &&
-  c.timeline.some(t => t.action === "Implemented" && new Date(t.timestamp).toDateString() === new Date().toDateString())
+  c.timeline?.some(t => t.action === "Implemented" && new Date(t.timestamp).toDateString() === new Date().toDateString())
   ).length;
 
   const getCompletedSteps = (steps: ValidationStep[]) => steps.filter(s => s.completed).length;
@@ -276,6 +309,7 @@ export default function Changes() {
     <Plus className="h-4 w-4 mr-2" />
     New Change Request
     </Button>
+    {/* TODO: wire up ChangeFormModal (doesn't exist yet) */}
     </div>
 
     {/* Stats Cards */}
@@ -414,10 +448,10 @@ export default function Changes() {
         </Badge>
         </TableCell>
         <TableCell>
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Calendar className="h-3 w-3" />
-        {format(change.planned_start, "MMM d, yyyy")}
-        </div>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Calendar className="h-3 w-3" />
+          {format(new Date(change.planned_start), "MMM d, yyyy")}
+          </div>
         </TableCell>
         <TableCell>
         <div className="flex items-center gap-2">
@@ -524,11 +558,11 @@ export default function Changes() {
       <CardContent className="space-y-2">
       <div>
       <p className="text-xs text-muted-foreground">Planned Start</p>
-      <p className="text-sm">{format(selectedChange.planned_start, "PPpp")}</p>
+      <p className="text-sm">{format(new Date(selectedChange.planned_start), "PPpp")}</p>
       </div>
       <div>
       <p className="text-xs text-muted-foreground">Planned End</p>
-      <p className="text-sm">{format(selectedChange.planned_end, "PPpp")}</p>
+      <p className="text-sm">{format(new Date(selectedChange.planned_end), "PPpp")}</p>
       </div>
       {selectedChange.approver && (
         <div>
@@ -548,21 +582,21 @@ export default function Changes() {
       </CardHeader>
       <CardContent className="space-y-2">
       <div>
-      <p className="text-xs text-muted-foreground">Impacted Assets</p>
+      <p className="text-xs text-muted-foreground">Impacted Asset IDs</p>
       <div className="flex flex-wrap gap-1 mt-1">
-      {selectedChange.impacted_assets.map((asset) => (
+      {selectedChange.impacted_asset_ids?.map((asset) => (
         <Badge key={asset} variant="secondary" className="text-xs">
-        {asset}
+        {asset.slice(0, 8)}...
         </Badge>
       ))}
       </div>
       </div>
       <div>
-      <p className="text-xs text-muted-foreground">Impacted Networks</p>
+      <p className="text-xs text-muted-foreground">Impacted Network IDs</p>
       <div className="flex flex-wrap gap-1 mt-1">
-      {selectedChange.impacted_networks.map((network) => (
+      {selectedChange.impacted_network_ids?.map((network) => (
         <Badge key={network} variant="outline" className="text-xs">
-        {network}
+        {network.slice(0, 8)}...
         </Badge>
       ))}
       </div>
@@ -615,29 +649,29 @@ export default function Changes() {
       <CardContent>
       <div className="space-y-4">
       {selectedChange.timeline.map((event, index) => (
-        <div key={event.id} className="flex gap-4">
-        <div className="flex flex-col items-center">
-        <div className="h-3 w-3 rounded-full bg-primary" />
-        {index < selectedChange.timeline.length - 1 && (
-          <div className="w-0.5 flex-1 bg-border mt-1" />
-        )}
-        </div>
-        <div className="flex-1 pb-4">
-        <div className="flex items-center gap-2">
-        <p className="text-sm font-medium">{event.action}</p>
-        <span className="text-xs text-muted-foreground">
-        {formatDistanceToNow(event.timestamp, { addSuffix: true })}
-        </span>
-        </div>
-        <p className="text-xs text-muted-foreground flex items-center gap-1">
-        <User className="h-3 w-3" />
-        {event.user}
-        </p>
-        {event.notes && (
-          <p className="text-xs text-muted-foreground mt-1 italic">{event.notes}</p>
-        )}
-        </div>
-        </div>
+      <div key={event.id} className="flex gap-4">
+      <div className="flex flex-col items-center">
+      <div className="h-3 w-3 rounded-full bg-primary" />
+      {index < selectedChange.timeline.length - 1 && (
+        <div className="w-0.5 flex-1 bg-border mt-1" />
+      )}
+      </div>
+      <div className="flex-1 pb-4">
+      <div className="flex items-center gap-2">
+      <p className="text-sm font-medium">{event.action}</p>
+      <span className="text-xs text-muted-foreground">
+      {formatDistanceToNow(new Date(event.timestamp), { addSuffix: true })}
+      </span>
+      </div>
+      <p className="text-xs text-muted-foreground flex items-center gap-1">
+      <User className="h-3 w-3" />
+      {event.user}
+      </p>
+      {event.notes && (
+        <p className="text-xs text-muted-foreground mt-1 italic">{event.notes}</p>
+      )}
+      </div>
+      </div>
       ))}
       </div>
       </CardContent>

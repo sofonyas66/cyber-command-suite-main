@@ -81,13 +81,26 @@ export default function Networks() {
     setLoading(true);
     setError(null);
     try {
-      // Only query networks table; demoSites and demoVlans remain as fallback
-      let netQuery = supabase.from('networks').select('id, name, cidr, vlan_id, firewall_zone, gateway, description, dns_servers, routing_notes, tags, created_at').limit(1000);
+      // Fetch sites
+      let sitesQuery = supabase.from('sites').select('id, name, address, description, created_at').limit(1000);
+      if (activeWorkspace?.id) sitesQuery = sitesQuery.eq('workspace_id', activeWorkspace.id as any);
+      const { data: sData, error: sErr } = await sitesQuery;
+      if (sErr) throw sErr;
+      setSites(sData || []);
+
+      // Fetch networks
+      let netQuery = supabase.from('networks').select('id, name, cidr, vlan_id, firewall_zone, gateway, description, dns_servers, routing_notes, tags, created_at, site_id').limit(1000);
       if (activeWorkspace?.id) netQuery = netQuery.eq('workspace_id', activeWorkspace.id as any);
       const { data: nData, error: nErr } = await netQuery;
       if (nErr) throw nErr;
       setNetworks(nData || []);
-      // leave sites/vlans as demo fallbacks by keeping them null
+
+      // Fetch vlans
+      let vlanQuery = supabase.from('vlans').select('id, vlan_id, name, description, network_id, site_id, created_at').limit(1000);
+      if (activeWorkspace?.id) vlanQuery = vlanQuery.eq('workspace_id', activeWorkspace.id as any);
+      const { data: vData, error: vErr } = await vlanQuery;
+      if (vErr) throw vErr;
+      setVlans(vData || []);
     } catch (err: any) {
       console.error('Failed to load networks data', err);
       setError(err.message || String(err));

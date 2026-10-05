@@ -181,7 +181,7 @@ export default function Vulnerabilities() {
     }
     // initial load
     fetchVulns();
-  }, [searchParams]);
+  }, [searchParams, activeWorkspace?.id]);
 
   const sourceVulns = vulnerabilities === null ? demoVulnerabilities : vulnerabilities;
 
@@ -195,10 +195,10 @@ export default function Vulnerabilities() {
   });
 
   const stats = {
-    critical: demoVulnerabilities.filter((v) => v.severity === "critical" && v.status !== "mitigated").length,
-    high: demoVulnerabilities.filter((v) => v.severity === "high" && v.status !== "mitigated").length,
-    medium: demoVulnerabilities.filter((v) => v.severity === "medium" && v.status !== "mitigated").length,
-    low: demoVulnerabilities.filter((v) => v.severity === "low" && v.status !== "mitigated").length,
+    critical: sourceVulns.filter((v) => v.severity === "critical" && v.status !== "mitigated").length,
+    high: sourceVulns.filter((v) => v.severity === "high" && v.status !== "mitigated").length,
+    medium: sourceVulns.filter((v) => v.severity === "medium" && v.status !== "mitigated").length,
+    low: sourceVulns.filter((v) => v.severity === "low" && v.status !== "mitigated").length,
   };
 
   return (
@@ -224,7 +224,7 @@ export default function Vulnerabilities() {
           open={importWizardOpen}
           onOpenChange={setImportWizardOpen}
           onImportComplete={() => {
-            // TODO: Refresh vulnerabilities list
+            fetchVulns();
           }}
         />
       </div>
@@ -335,7 +335,7 @@ export default function Vulnerabilities() {
                   <TableHead>CVSS</TableHead>
                   <TableHead>Severity</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Assets</TableHead>
+                  {/* TODO: Assets column removed for now; asset counts must come from a count of vuln_assets join table (follow-up) */}
                   <TableHead>SLA Due</TableHead>
                   <TableHead>Source</TableHead>
                 </TableRow>
@@ -344,8 +344,9 @@ export default function Vulnerabilities() {
                 {filteredVulns.map((vuln) => {
                   const statusConfig = getStatusBadge(vuln.status);
                   const StatusIcon = statusConfig.icon;
-                  const daysUntilDue = vuln.sla_due_date
-                    ? differenceInDays(vuln.sla_due_date, new Date())
+                  const parsedDueDate = vuln.sla_due_date ? new Date(vuln.sla_due_date) : null;
+                  const daysUntilDue = parsedDueDate && !isNaN(parsedDueDate.getTime())
+                    ? differenceInDays(parsedDueDate, new Date())
                     : null;
 
                   const isFocused = focusedVulnId === String(vuln.id);
@@ -369,7 +370,9 @@ export default function Vulnerabilities() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <span className="font-mono font-medium">{vuln.cvss_score.toFixed(1)}</span>
+                        <span className="font-mono font-medium">
+                          {vuln.cvss_score != null ? vuln.cvss_score.toFixed(1) : "—"}
+                        </span>
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline" className={`text-xs ${getSeverityBadge(vuln.severity)}`}>
@@ -382,11 +385,7 @@ export default function Vulnerabilities() {
                           {vuln.status.replace("_", " ")}
                         </Badge>
                       </TableCell>
-                      <TableCell>
-                        <Badge variant="secondary" className="text-xs">
-                          {vuln.affected_assets} asset{vuln.affected_assets !== 1 ? "s" : ""}
-                        </Badge>
-                      </TableCell>
+                      {/* TODO: affected_assets count from vuln_assets join table (follow-up) */}
                       <TableCell>
                         {daysUntilDue !== null ? (
                           <span
@@ -417,7 +416,7 @@ export default function Vulnerabilities() {
           </div>
         </CardContent>
       </Card>
-      <VulnFormModal open={createOpen} onOpenChange={(o) => setCreateOpen(o)} initialAssetId={createForAsset} onSaved={() => { /* TODO: refresh list */ }} />
+      <VulnFormModal open={createOpen} onOpenChange={(o) => setCreateOpen(o)} initialAssetId={createForAsset} onSaved={() => { fetchVulns(); }} />
     </div>
   );
 }
