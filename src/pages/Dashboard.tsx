@@ -16,10 +16,12 @@ import {
   ExternalLink,
   Radar,
   Shield,
+  Search,
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from "recharts";
 import { supabase } from "@/integrations/supabase/client";
 import { useWorkspace } from "@/hooks/useWorkspace";
+import { format, subWeeks, startOfWeek, endOfWeek, differenceInDays } from "date-fns";
 
 const kpiData = [
   {
@@ -67,7 +69,7 @@ const detectionStats = {
   techniques: 15,
 };
 
-const mitreDistribution = [
+const demoMitreDistribution = [
   { technique: "T1059", count: 5, name: "Command & Scripting" },
   { technique: "T1110", count: 4, name: "Brute Force" },
   { technique: "T1021", count: 3, name: "Remote Services" },
@@ -75,14 +77,14 @@ const mitreDistribution = [
   { technique: "T1071", count: 2, name: "Application Layer Protocol" },
 ];
 
-const vulnBySeverity = [
+const demoVulnBySeverity = [
   { name: "Critical", value: 5, color: "hsl(var(--destructive))" },
   { name: "High", value: 12, color: "hsl(25, 95%, 53%)" },
   { name: "Medium", value: 18, color: "hsl(38, 92%, 50%)" },
   { name: "Low", value: 12, color: "hsl(var(--success))" },
 ];
 
-const vulnTrend = [
+const demoVulnTrend = [
   { date: "Dec 1", new: 8, resolved: 5 },
   { date: "Dec 5", new: 12, resolved: 10 },
   { date: "Dec 9", new: 6, resolved: 8 },
@@ -91,30 +93,30 @@ const vulnTrend = [
   { date: "Dec 19", new: 7, resolved: 11 },
 ];
 
-const recentAlerts = [
+const demoRecentAlerts = [
   {
-    id: 1,
+    id: "1",
     title: "Critical RCE vulnerability detected",
     severity: "critical",
     asset: "dc01.corp.local",
     time: "15 min ago",
   },
   {
-    id: 2,
+    id: "2",
     title: "Unusual login pattern detected",
     severity: "high",
     asset: "vpn-gateway-01",
     time: "1 hour ago",
   },
   {
-    id: 3,
+    id: "3",
     title: "SSL certificate expiring soon",
     severity: "medium",
     asset: "webserver-prod-02",
     time: "3 hours ago",
   },
   {
-    id: 4,
+    id: "4",
     title: "Firewall rule audit required",
     severity: "low",
     asset: "fw-edge-01",
@@ -122,11 +124,11 @@ const recentAlerts = [
   },
 ];
 
-const upcomingTasks = [
-  { id: 1, title: "Review Q4 incident reports", due: "Today", priority: "high" },
-  { id: 2, title: "Update VPN runbook", due: "Tomorrow", priority: "medium" },
-  { id: 3, title: "Patch Windows servers", due: "Dec 22", priority: "critical" },
-  { id: 4, title: "Security awareness training", due: "Dec 25", priority: "low" },
+const demoUpcomingTasks = [
+  { id: "1", title: "Review Q4 incident reports", due: "Today", priority: "high" },
+  { id: "2", title: "Update VPN runbook", due: "Tomorrow", priority: "medium" },
+  { id: "3", title: "Patch Windows servers", due: "Dec 22", priority: "critical" },
+  { id: "4", title: "Security awareness training", due: "Dec 25", priority: "low" },
 ];
 
 const getSeverityColor = (severity: string) => {
@@ -154,6 +156,10 @@ export default function Dashboard() {
   const [detectionStatsState, setDetectionStatsState] = useState<any | null>(null);
   const [mitreDistState, setMitreDistState] = useState<any[] | null>(null);
   const [recentAlertsState, setRecentAlertsState] = useState<any[] | null>(null);
+  const [vulnTrendState, setVulnTrendState] = useState<any[] | null>(null);
+  const [vulnBySeverityState, setVulnBySeverityState] = useState<any[] | null>(null);
+  const [upcomingTasksState, setUpcomingTasksState] = useState<any[] | null>(null);
+  const [lastScan, setLastScan] = useState<string | null>(null);
 
   useEffect(() => {
     const workspaceFilter = (q: any) => (activeWorkspace?.id ? q.eq('workspace_id', activeWorkspace.id) : q);
@@ -189,6 +195,7 @@ export default function Dashboard() {
         const mitreArr = Object.keys(techniqueCounts).map(k => ({ technique: k, count: techniqueCounts[k], name: k }));
         mitreArr.sort((a, b) => b.count - a.count);
 
+        // TODO: needs real "fired in last 7 days" query using detections.last_fired_at
         setDetectionStatsState({ total: totalDet, enabled: enabledDet, triggered: 0, techniques: mitreArr.length });
         setMitreDistState(mitreArr.slice(0, 5));
 
@@ -196,7 +203,128 @@ export default function Dashboard() {
         let incQuery = supabase.from('incidents').select('id, title, severity, opened_at, created_at').order('created_at', { ascending: false }).limit(10);
         if (activeWorkspace?.id) incQuery = incQuery.eq('workspace_id', activeWorkspace.id as any);
         const { data: recentInc } = await incQuery;
-        setRecentAlertsState((recentInc || []).map((i: any) => ({ id: i.id, title: i.title, severity: i.severity, asset: '-', time: i.created_at || i.opened_at })));
+        setRecentAlertsState((recentInc || []).map((i: any) => {
+          let timeDisplay = "-";
+          const rawTime = i.created_at || i.opened_at;
+          if (rawTime) {
+            const d = new Date(rawTime);
+            if (!isNaN(d.getTime())) timeDisplay = format(d, "MMM d, h:mm a");
+          }
+          return {
+            id: i.id,
+            title: i.title,
+            severity: i.severity,
+            asset: '-',
+            time: timeDisplay,
+          };
+        }));
+
+        // 1. Vulnerability Trend: last 6 weekly buckets
+        let vulnTrendQuery = workspaceFilter(supabase.from('vulnerabilities').select('first_detected, updated_at, status').limit(2000));
+        const { data: vulnTrendData } = await vulnTrendQuery;
+
+        const now = new Date();
+        const weeks = [5, 4, 3, 2, 1, 0].map((weeksAgo) => {
+          const target = subWeeks(now, weeksAgo);
+          const start = startOfWeek(target);
+          const end = endOfWeek(target);
+          return {
+            label: format(start, "MMM d"),
+            start,
+            end,
+            new: 0,
+            resolved: 0,
+          };
+        });
+
+        (vulnTrendData || []).forEach((v: any) => {
+          if (v.first_detected) {
+            const d = new Date(v.first_detected);
+            if (!isNaN(d.getTime())) {
+              const bucket = weeks.find((w) => d >= w.start && d <= w.end);
+              if (bucket) bucket.new += 1;
+            }
+          }
+          if (v.status === 'mitigated' && v.updated_at) {
+            const d = new Date(v.updated_at);
+            if (!isNaN(d.getTime())) {
+              const bucket = weeks.find((w) => d >= w.start && d <= w.end);
+              if (bucket) bucket.resolved += 1;
+            }
+          }
+        });
+
+        setVulnTrendState(weeks.map((w) => ({ date: w.label, new: w.new, resolved: w.resolved })));
+
+        // 2. Vulnerability By Severity: group by severity where status != 'mitigated'
+        let vulnSevQuery = workspaceFilter(supabase.from('vulnerabilities').select('severity').neq('status', 'mitigated').limit(2000));
+        const { data: vulnSevData } = await vulnSevQuery;
+
+        const sevCounts = { critical: 0, high: 0, medium: 0, low: 0 };
+        (vulnSevData || []).forEach((v: any) => {
+          const s = (v.severity || '').toLowerCase();
+          if (s in sevCounts) {
+            sevCounts[s as keyof typeof sevCounts] += 1;
+          }
+        });
+
+        setVulnBySeverityState([
+          { name: "Critical", value: sevCounts.critical, color: "hsl(var(--destructive))" },
+          { name: "High", value: sevCounts.high, color: "hsl(25, 95%, 53%)" },
+          { name: "Medium", value: sevCounts.medium, color: "hsl(38, 92%, 50%)" },
+          { name: "Low", value: sevCounts.low, color: "hsl(var(--success))" },
+        ]);
+
+        // 3. Upcoming Tasks: where status != 'completed' order by due_date asc limit 4
+        let tasksQuery = workspaceFilter(supabase.from('tasks').select('id, title, due_date, priority').neq('status', 'completed').order('due_date', { ascending: true }).limit(4));
+        const { data: tasksData } = await tasksQuery;
+
+        setUpcomingTasksState((tasksData || []).map((t: any) => {
+          let dueStr = "No due date";
+          if (t.due_date) {
+            const d = new Date(t.due_date);
+            if (!isNaN(d.getTime())) {
+              const diff = differenceInDays(d, new Date());
+              if (diff === 0) dueStr = "Today";
+              else if (diff === 1) dueStr = "Tomorrow";
+              else dueStr = format(d, "MMM d");
+            }
+          }
+          return {
+            id: t.id,
+            title: t.title,
+            due: dueStr,
+            priority: t.priority || "medium",
+          };
+        }));
+
+        // Last scan text from most recent sync_runs.started_at across workspace integrations
+        let lastScanStr = "No syncs yet";
+        let integrationIds: string[] = [];
+        if (activeWorkspace?.id) {
+          const { data: ints } = await supabase.from('integrations').select('id').eq('workspace_id', activeWorkspace.id);
+          integrationIds = (ints || []).map((i) => i.id);
+        } else {
+          const { data: ints } = await supabase.from('integrations').select('id');
+          integrationIds = (ints || []).map((i) => i.id);
+        }
+
+        if (integrationIds.length > 0) {
+          const { data: syncs } = await supabase
+            .from('sync_runs')
+            .select('started_at')
+            .in('integration_id', integrationIds)
+            .order('started_at', { ascending: false })
+            .limit(1);
+
+          if (syncs && syncs.length > 0 && syncs[0].started_at) {
+            const d = new Date(syncs[0].started_at);
+            if (!isNaN(d.getTime())) {
+              lastScanStr = format(d, "MMM d, h:mm a");
+            }
+          }
+        }
+        setLastScan(lastScanStr);
       } catch (err) {
         console.error('Failed to load dashboard data', err);
       }
@@ -226,8 +354,11 @@ export default function Dashboard() {
   ];
 
   const detectionStatsDisplay = detectionStatsState ?? detectionStats;
-  const mitreDistributionDisplay = mitreDistState && mitreDistState.length > 0 ? mitreDistState : mitreDistribution;
-  const recentAlertsDisplay = recentAlertsState && recentAlertsState.length > 0 ? recentAlertsState : recentAlerts;
+  const sourceMitreDistribution = mitreDistState === null ? demoMitreDistribution : mitreDistState;
+  const sourceRecentAlerts = recentAlertsState === null ? demoRecentAlerts : recentAlertsState;
+  const sourceVulnTrend = vulnTrendState === null ? demoVulnTrend : vulnTrendState;
+  const sourceVulnBySeverity = vulnBySeverityState === null ? demoVulnBySeverity : vulnBySeverityState;
+  const sourceUpcomingTasks = upcomingTasksState === null ? demoUpcomingTasks : upcomingTasksState;
 
   return (
     <div className="space-y-6">
@@ -239,7 +370,7 @@ export default function Dashboard() {
         </div>
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Calendar className="h-4 w-4" />
-          <span>Last scan: Today at 09:45 AM</span>
+          <span>{lastScan === null ? "Loading sync info..." : lastScan === "No syncs yet" ? "No syncs yet" : `Last scan: ${lastScan}`}</span>
         </div>
       </div>
 
@@ -284,7 +415,7 @@ export default function Dashboard() {
           <CardContent>
             <div className="h-[250px]">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={vulnTrend}>
+                <LineChart data={sourceVulnTrend}>
                   <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 12 }} />
                   <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12 }} />
                   <Tooltip
@@ -335,7 +466,7 @@ export default function Dashboard() {
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
-                    data={vulnBySeverity}
+                    data={sourceVulnBySeverity}
                     cx="50%"
                     cy="50%"
                     innerRadius={50}
@@ -343,7 +474,7 @@ export default function Dashboard() {
                     paddingAngle={4}
                     dataKey="value"
                   >
-                    {vulnBySeverity.map((entry, index) => (
+                    {sourceVulnBySeverity.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                   </Pie>
@@ -358,7 +489,7 @@ export default function Dashboard() {
               </ResponsiveContainer>
             </div>
             <div className="grid grid-cols-2 gap-2 mt-2">
-              {vulnBySeverity.map((item) => (
+              {sourceVulnBySeverity.map((item) => (
                 <div key={item.name} className="flex items-center gap-2">
                   <div className="h-2 w-2 rounded-full" style={{ backgroundColor: item.color }} />
                   <span className="text-xs text-muted-foreground">{item.name}</span>
@@ -413,22 +544,29 @@ export default function Dashboard() {
             <CardDescription>Detection coverage by technique</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
-              {mitreDistributionDisplay.map((item) => (
-                <div key={item.technique} className="flex items-center gap-3">
-                  <Badge variant="secondary" className="font-mono text-xs min-w-[60px] justify-center">
-                    {item.technique}
-                  </Badge>
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm">{item.name}</span>
-                      <span className="text-sm font-medium">{item.count} rules</span>
+            {sourceMitreDistribution.length === 0 ? (
+              <div className="py-8 text-center text-muted-foreground flex flex-col items-center justify-center gap-2">
+                <Shield className="h-8 w-8 opacity-40" />
+                <p className="text-sm">No detection rules yet</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {sourceMitreDistribution.map((item) => (
+                  <div key={item.technique} className="flex items-center gap-3">
+                    <Badge variant="secondary" className="font-mono text-xs min-w-[60px] justify-center">
+                      {item.technique}
+                    </Badge>
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm">{item.name}</span>
+                        <span className="text-sm font-medium">{item.count} rules</span>
+                      </div>
+                      <Progress value={(item.count / 5) * 100} className="h-2" />
                     </div>
-                    <Progress value={(item.count / 5) * 100} className="h-2" />
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -447,27 +585,34 @@ export default function Dashboard() {
             </div>
           </CardHeader>
           <CardContent className="space-y-3">
-            {recentAlertsDisplay.map((alert) => (
-              <div
-                key={alert.id}
-                className="flex items-start gap-3 p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer"
-              >
-                <div className={`status-badge ${getSeverityColor(alert.severity)}`}>
-                  {alert.severity}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{alert.title}</p>
-                  <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
-                    <Server className="h-3 w-3" />
-                    <span className="truncate">{alert.asset}</span>
-                    <span>•</span>
-                    <Clock className="h-3 w-3" />
-                    <span>{alert.time}</span>
-                  </div>
-                </div>
-                <ExternalLink className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+            {sourceRecentAlerts.length === 0 ? (
+              <div className="py-8 text-center text-muted-foreground flex flex-col items-center justify-center gap-2">
+                <AlertTriangle className="h-8 w-8 opacity-40" />
+                <p className="text-sm">No recent incidents</p>
               </div>
-            ))}
+            ) : (
+              sourceRecentAlerts.map((alert) => (
+                <div
+                  key={alert.id}
+                  className="flex items-start gap-3 p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer"
+                >
+                  <div className={`status-badge ${getSeverityColor(alert.severity)}`}>
+                    {alert.severity}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{alert.title}</p>
+                    <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                      <Server className="h-3 w-3" />
+                      <span className="truncate">{alert.asset}</span>
+                      <span>•</span>
+                      <Clock className="h-3 w-3" />
+                      <span>{alert.time}</span>
+                    </div>
+                  </div>
+                  <ExternalLink className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                </div>
+              ))
+            )}
           </CardContent>
         </Card>
 
@@ -483,57 +628,38 @@ export default function Dashboard() {
             </div>
           </CardHeader>
           <CardContent className="space-y-3">
-            {upcomingTasks.map((task) => (
-              <div
-                key={task.id}
-                className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer"
-              >
-                <input type="checkbox" className="h-4 w-4 rounded border-border" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium">{task.title}</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <Badge
-                      variant="outline"
-                      className={`text-[10px] ${getSeverityColor(task.priority)}`}
-                    >
-                      {task.priority}
-                    </Badge>
-                    <span className="text-xs text-muted-foreground">Due: {task.due}</span>
+            {sourceUpcomingTasks.length === 0 ? (
+              <div className="py-8 text-center text-muted-foreground flex flex-col items-center justify-center gap-2">
+                <CheckCircle2 className="h-8 w-8 opacity-40" />
+                <p className="text-sm">No upcoming tasks</p>
+              </div>
+            ) : (
+              sourceUpcomingTasks.map((task) => (
+                <div
+                  key={task.id}
+                  className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer"
+                >
+                  <input type="checkbox" className="h-4 w-4 rounded border-border" readOnly />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium">{task.title}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <Badge
+                        variant="outline"
+                        className={`text-[10px] ${getSeverityColor(task.priority)}`}
+                      >
+                        {task.priority}
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">Due: {task.due}</span>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              ))
+            )}
           </CardContent>
         </Card>
       </div>
 
-      {/* Quick Stats Bar */}
-      <Card>
-        <CardContent className="p-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="text-center">
-              <Activity className="h-5 w-5 mx-auto text-primary mb-1" />
-              <p className="text-2xl font-bold">99.7%</p>
-              <p className="text-xs text-muted-foreground">Uptime (30d)</p>
-            </div>
-            <div className="text-center">
-              <ShieldAlert className="h-5 w-5 mx-auto text-destructive mb-1" />
-              <p className="text-2xl font-bold">2.4d</p>
-              <p className="text-xs text-muted-foreground">Avg. MTTR</p>
-            </div>
-            <div className="text-center">
-              <CheckCircle2 className="h-5 w-5 mx-auto text-success mb-1" />
-              <p className="text-2xl font-bold">127</p>
-              <p className="text-xs text-muted-foreground">Vulns Fixed (MTD)</p>
-            </div>
-            <div className="text-center">
-              <Clock className="h-5 w-5 mx-auto text-warning mb-1" />
-              <p className="text-2xl font-bold">5</p>
-              <p className="text-xs text-muted-foreground">SLA Breaches</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Quick Stats Bar removed: Uptime and MTTR have no real data source in the schema and displaying fake metrics is misleading */}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -49,6 +49,9 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
+import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
+import { useWorkspace } from "@/hooks/useWorkspace";
 
 type ChangeType = "Firewall" | "ACL" | "Routing" | "VPN" | "Switch" | "DNS";
 type ChangeStatus = "Draft" | "Review" | "Approved" | "Implemented" | "Verified" | "Closed";
@@ -320,7 +323,7 @@ export default function Changes() {
     <GitBranch className="h-5 w-5 text-primary" />
     </div>
     <div>
-    <p className="text-2xl font-bold">{demoChanges.length}</p>
+    <p className="text-2xl font-bold">{sourceChanges.length}</p>
     <p className="text-xs text-muted-foreground">Total Changes</p>
     </div>
     </CardContent>
