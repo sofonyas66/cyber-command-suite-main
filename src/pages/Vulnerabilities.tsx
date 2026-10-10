@@ -32,6 +32,7 @@ import {
   CheckCircle2,
   Clock,
   ExternalLink,
+  RefreshCw,
 } from "lucide-react";
 import { differenceInDays } from "date-fns";
 import { VulnImportWizard } from "@/components/modals/VulnImportWizard";
@@ -165,7 +166,8 @@ export default function Vulnerabilities() {
     } catch (err: any) {
       console.error('Failed to load vulnerabilities', err);
       setVulnsError(err.message || String(err));
-      toast.error('Failed to load vulnerabilities');
+      toast.error(`Failed to load vulnerabilities: ${err.message || String(err)}`);
+      setVulnerabilities([]);
     } finally {
       setVulnsLoading(false);
     }
@@ -183,7 +185,7 @@ export default function Vulnerabilities() {
     fetchVulns();
   }, [searchParams, activeWorkspace?.id]);
 
-  const sourceVulns = vulnerabilities === null ? demoVulnerabilities : vulnerabilities;
+  const sourceVulns = vulnerabilities === null ? demoVulnerabilities : vulnerabilities || [];
 
   const filteredVulns = sourceVulns.filter((vuln) => {
     const matchesSearch =
@@ -327,93 +329,106 @@ export default function Vulnerabilities() {
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow className="table-header">
-                  <TableHead className="w-[300px]">Vulnerability</TableHead>
-                  <TableHead>CVSS</TableHead>
-                  <TableHead>Severity</TableHead>
-                  <TableHead>Status</TableHead>
-                  {/* TODO: Assets column removed for now; asset counts must come from a count of vuln_assets join table (follow-up) */}
-                  <TableHead>SLA Due</TableHead>
-                  <TableHead>Source</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredVulns.map((vuln) => {
-                  const statusConfig = getStatusBadge(vuln.status);
-                  const StatusIcon = statusConfig.icon;
-                  const parsedDueDate = vuln.sla_due_date ? new Date(vuln.sla_due_date) : null;
-                  const daysUntilDue = parsedDueDate && !isNaN(parsedDueDate.getTime())
-                    ? differenceInDays(parsedDueDate, new Date())
-                    : null;
+          {vulnsError && !vulnsLoading && (
+            <div className="p-6 text-center">
+              <AlertTriangle className="h-10 w-10 text-destructive mx-auto mb-3" />
+              <p className="text-destructive font-medium mb-2">Failed to load vulnerabilities</p>
+              <p className="text-sm text-muted-foreground mb-4">{vulnsError}</p>
+              <Button onClick={fetchVulns} variant="outline">
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Retry
+              </Button>
+            </div>
+          )}
+          {!vulnsError && (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="table-header">
+                    <TableHead className="w-[300px]">Vulnerability</TableHead>
+                    <TableHead>CVSS</TableHead>
+                    <TableHead>Severity</TableHead>
+                    <TableHead>Status</TableHead>
+                    {/* TODO: Assets column removed for now; asset counts must come from a count of vuln_assets join table (follow-up) */}
+                    <TableHead>SLA Due</TableHead>
+                    <TableHead>Source</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredVulns.map((vuln) => {
+                    const statusConfig = getStatusBadge(vuln.status);
+                    const StatusIcon = statusConfig.icon;
+                    const parsedDueDate = vuln.sla_due_date ? new Date(vuln.sla_due_date) : null;
+                    const daysUntilDue = parsedDueDate && !isNaN(parsedDueDate.getTime())
+                      ? differenceInDays(parsedDueDate, new Date())
+                      : null;
 
-                  const isFocused = focusedVulnId === String(vuln.id);
-                  return (
-                    <TableRow key={vuln.id} className={"cursor-pointer " + (isFocused ? 'ring-2 ring-primary/40 bg-primary/5' : 'hover:bg-muted/50')}>
-                      <TableCell>
-                        <div>
-                          <p className="font-medium">{vuln.title}</p>
-                          {vuln.cve_id && (
-                            <a
-                              href={`https://nvd.nist.gov/vuln/detail/${vuln.cve_id}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-xs text-primary hover:underline flex items-center gap-1"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {vuln.cve_id}
-                              <ExternalLink className="h-3 w-3" />
-                            </a>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <span className="font-mono font-medium">
-                          {vuln.cvss_score != null ? vuln.cvss_score.toFixed(1) : "—"}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className={`text-xs ${getSeverityBadge(vuln.severity)}`}>
-                          {vuln.severity}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className={`text-xs ${statusConfig.color}`}>
-                          <StatusIcon className="h-3 w-3 mr-1" />
-                          {vuln.status.replace("_", " ")}
-                        </Badge>
-                      </TableCell>
-                      {/* TODO: affected_assets count from vuln_assets join table (follow-up) */}
-                      <TableCell>
-                        {daysUntilDue !== null ? (
-                          <span
-                            className={`text-sm ${
-                              daysUntilDue < 0
-                                ? "text-destructive font-medium"
-                                : daysUntilDue <= 3
-                                ? "text-warning"
-                                : "text-muted-foreground"
-                            }`}
-                          >
-                            {daysUntilDue < 0
-                              ? `${Math.abs(daysUntilDue)}d overdue`
-                              : daysUntilDue === 0
-                              ? "Today"
-                              : `${daysUntilDue}d`}
+                    const isFocused = focusedVulnId === String(vuln.id);
+                    return (
+                      <TableRow key={vuln.id} className={"cursor-pointer " + (isFocused ? 'ring-2 ring-primary/40 bg-primary/5' : 'hover:bg-muted/50')}>
+                        <TableCell>
+                          <div>
+                            <p className="font-medium">{vuln.title}</p>
+                            {vuln.cve_id && (
+                              <a
+                                href={`https://nvd.nist.gov/vuln/detail/${vuln.cve_id}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs text-primary hover:underline flex items-center gap-1"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {vuln.cve_id}
+                                <ExternalLink className="h-3 w-3" />
+                              </a>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <span className="font-mono font-medium">
+                            {vuln.cvss_score != null ? vuln.cvss_score.toFixed(1) : "—"}
                           </span>
-                        ) : (
-                          <span className="text-muted-foreground text-sm">-</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{vuln.source}</TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={`text-xs ${getSeverityBadge(vuln.severity)}`}>
+                            {vuln.severity}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={`text-xs ${statusConfig.color}`}>
+                            <StatusIcon className="h-3 w-3 mr-1" />
+                            {vuln.status.replace("_", " ")}
+                          </Badge>
+                        </TableCell>
+                        {/* TODO: affected_assets count from vuln_assets join table (follow-up) */}
+                        <TableCell>
+                          {daysUntilDue !== null ? (
+                            <span
+                              className={`text-sm ${
+                                daysUntilDue < 0
+                                  ? "text-destructive font-medium"
+                                  : daysUntilDue <= 3
+                                  ? "text-warning"
+                                  : "text-muted-foreground"
+                              }`}
+                            >
+                              {daysUntilDue < 0
+                                ? `${Math.abs(daysUntilDue)}d overdue`
+                                : daysUntilDue === 0
+                                ? "Today"
+                                : `${daysUntilDue}d`}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground text-sm">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{vuln.source}</TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+                </Table>
+            </div>
+          )}
         </CardContent>
       </Card>
       <VulnFormModal open={createOpen} onOpenChange={(o) => setCreateOpen(o)} initialAssetId={createForAsset} onSaved={() => { fetchVulns(); }} />

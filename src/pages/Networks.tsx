@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, Plus, Network, Globe, Shield, Router, Building, Layers, MapPin } from "lucide-react";
+import { Search, Plus, Network, Globe, Shield, Router, Building, Layers, MapPin, RefreshCw, AlertTriangle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useWorkspace } from "@/hooks/useWorkspace";
 import { toast } from "sonner";
@@ -75,11 +75,15 @@ export default function Networks() {
   const [networks, setNetworks] = useState<any[] | null>(null);
   const [vlans, setVlans] = useState<any[] | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [sitesError, setSitesError] = useState<string | null>(null);
+  const [networksError, setNetworksError] = useState<string | null>(null);
+  const [vlansError, setVlansError] = useState<string | null>(null);
 
   const fetchAll = async () => {
     setLoading(true);
-    setError(null);
+    setSitesError(null);
+    setNetworksError(null);
+    setVlansError(null);
     try {
       // Fetch sites
       let sitesQuery = supabase.from('sites').select('id, name, address, description, created_at').limit(1000);
@@ -87,14 +91,28 @@ export default function Networks() {
       const { data: sData, error: sErr } = await sitesQuery;
       if (sErr) throw sErr;
       setSites(sData || []);
+    } catch (err: any) {
+      console.error('Failed to load sites', err);
+      setSitesError(err.message || String(err));
+      toast.error(`Failed to load sites: ${err.message || String(err)}`);
+      setSites([]);
+    }
 
+    try {
       // Fetch networks
       let netQuery = supabase.from('networks').select('id, name, cidr, vlan_id, firewall_zone, gateway, description, dns_servers, routing_notes, tags, created_at, site_id').limit(1000);
       if (activeWorkspace?.id) netQuery = netQuery.eq('workspace_id', activeWorkspace.id as any);
       const { data: nData, error: nErr } = await netQuery;
       if (nErr) throw nErr;
       setNetworks(nData || []);
+    } catch (err: any) {
+      console.error('Failed to load networks', err);
+      setNetworksError(err.message || String(err));
+      toast.error(`Failed to load networks: ${err.message || String(err)}`);
+      setNetworks([]);
+    }
 
+    try {
       // Fetch vlans
       let vlanQuery = supabase.from('vlans').select('id, vlan_id, name, description, network_id, site_id, created_at').limit(1000);
       if (activeWorkspace?.id) vlanQuery = vlanQuery.eq('workspace_id', activeWorkspace.id as any);
@@ -102,21 +120,22 @@ export default function Networks() {
       if (vErr) throw vErr;
       setVlans(vData || []);
     } catch (err: any) {
-      console.error('Failed to load networks data', err);
-      setError(err.message || String(err));
-      toast.error('Failed to load networks');
-    } finally {
-      setLoading(false);
+      console.error('Failed to load vlans', err);
+      setVlansError(err.message || String(err));
+      toast.error(`Failed to load VLANs: ${err.message || String(err)}`);
+      setVlans([]);
     }
+
+    setLoading(false);
   };
 
   useEffect(() => {
     fetchAll();
   }, [activeWorkspace?.id]);
 
-  const sourceNetworks = networks === null ? demoNetworks : networks;
-  const sourceVlans = vlans === null ? demoVlans : vlans;
-  const sourceSites = sites === null ? demoSites : sites;
+  const sourceNetworks = networks === null ? demoNetworks : networks || [];
+  const sourceVlans = vlans === null ? demoVlans : vlans || [];
+  const sourceSites = sites === null ? demoSites : sites || [];
 
   const filteredNetworks = sourceNetworks.filter((network) => {
     const matchesSearch = network.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -150,7 +169,7 @@ export default function Networks() {
           <h1 className="text-2xl font-bold">Networks</h1>
           <p className="text-muted-foreground">Manage sites, subnets, VLANs, and network topology</p>
         </div>
-        <Button size="sm">
+        <Button size="sm" disabled title="Coming soon">
           <Plus className="h-4 w-4 mr-2" />
           Add Network
         </Button>
@@ -260,45 +279,58 @@ export default function Networks() {
         <TabsContent value="sites" className="mt-4">
           <Card>
             <CardContent className="p-0">
-              <Table>
-                <TableHeader>
-                  <TableRow className="table-header">
-                    <TableHead>Site Name</TableHead>
-                    <TableHead>Address</TableHead>
-                    <TableHead>Networks</TableHead>
-                    <TableHead>Assets</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredSites.map((site) => (
-                    <TableRow key={site.id} className="cursor-pointer hover:bg-muted/50">
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 rounded-lg bg-primary/10">
-                            <Building className="h-4 w-4 text-primary" />
-                          </div>
-                          <div>
-                            <p className="font-medium">{site.name}</p>
-                            <p className="text-xs text-muted-foreground">{site.description}</p>
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <MapPin className="h-3 w-3" />
-                          {site.address}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="secondary">{site.network_count} networks</Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{site.asset_count} assets</Badge>
-                      </TableCell>
+              {sitesError && !loading && (
+                <div className="p-6 text-center">
+                  <AlertTriangle className="h-10 w-10 text-destructive mx-auto mb-3" />
+                  <p className="text-destructive font-medium mb-2">Failed to load sites</p>
+                  <p className="text-sm text-muted-foreground mb-4">{sitesError}</p>
+                  <Button onClick={fetchAll} variant="outline">
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Retry
+                  </Button>
+                </div>
+              )}
+              {!sitesError && (
+                <Table>
+                  <TableHeader>
+                    <TableRow className="table-header">
+                      <TableHead>Site Name</TableHead>
+                      <TableHead>Address</TableHead>
+                      <TableHead>Networks</TableHead>
+                      <TableHead>Assets</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredSites.map((site) => (
+                      <TableRow key={site.id} className="cursor-pointer hover:bg-muted/50">
+                        <TableCell>
+                          <div className="flex items-center gap-3">
+                            <div className="p-2 rounded-lg bg-primary/10">
+                              <Building className="h-4 w-4 text-primary" />
+                            </div>
+                            <div>
+                              <p className="font-medium">{site.name}</p>
+                              <p className="text-xs text-muted-foreground">{site.description}</p>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <MapPin className="h-3 w-3" />
+                            {site.address}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="secondary">{site.network_count} networks</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{site.asset_count} assets</Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -307,45 +339,58 @@ export default function Networks() {
         <TabsContent value="subnets" className="mt-4">
           <Card>
             <CardContent className="p-0">
-              <Table>
-                <TableHeader>
-                  <TableRow className="table-header">
-                    <TableHead>Network Name</TableHead>
-                    <TableHead>CIDR</TableHead>
-                    <TableHead>VLAN ID</TableHead>
-                    <TableHead>Firewall Zone</TableHead>
-                    <TableHead>Site</TableHead>
-                    <TableHead>Assets</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredNetworks.map((network) => (
-                    <TableRow key={network.id} className="cursor-pointer hover:bg-muted/50">
-                      <TableCell>
-                        <div>
-                          <p className="font-medium">{network.name}</p>
-                          <p className="text-xs text-muted-foreground">{network.description}</p>
-                        </div>
-                      </TableCell>
-                      <TableCell className="font-mono text-sm">{network.cidr}</TableCell>
-                      <TableCell className="font-mono text-sm">{network.vlan_id}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className={`text-xs ${getZoneColor(network.firewall_zone)}`}>
-                          {network.firewall_zone}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <span className="text-sm text-muted-foreground">{network.site}</span>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="secondary" className="text-xs">
-                          {network.asset_count} assets
-                        </Badge>
-                      </TableCell>
+              {networksError && !loading && (
+                <div className="p-6 text-center">
+                  <AlertTriangle className="h-10 w-10 text-destructive mx-auto mb-3" />
+                  <p className="text-destructive font-medium mb-2">Failed to load networks</p>
+                  <p className="text-sm text-muted-foreground mb-4">{networksError}</p>
+                  <Button onClick={fetchAll} variant="outline">
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Retry
+                  </Button>
+                </div>
+              )}
+              {!networksError && (
+                <Table>
+                  <TableHeader>
+                    <TableRow className="table-header">
+                      <TableHead>Network Name</TableHead>
+                      <TableHead>CIDR</TableHead>
+                      <TableHead>VLAN ID</TableHead>
+                      <TableHead>Firewall Zone</TableHead>
+                      <TableHead>Site</TableHead>
+                      <TableHead>Assets</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredNetworks.map((network) => (
+                      <TableRow key={network.id} className="cursor-pointer hover:bg-muted/50">
+                        <TableCell>
+                          <div>
+                            <p className="font-medium">{network.name}</p>
+                            <p className="text-xs text-muted-foreground">{network.description}</p>
+                          </div>
+                        </TableCell>
+                        <TableCell className="font-mono text-sm">{network.cidr}</TableCell>
+                        <TableCell className="font-mono text-sm">{network.vlan_id}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={`text-xs ${getZoneColor(network.firewall_zone)}`}>
+                            {network.firewall_zone}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <span className="text-sm text-muted-foreground">{network.site}</span>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="secondary" className="text-xs">
+                            {network.asset_count} assets
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -354,45 +399,58 @@ export default function Networks() {
         <TabsContent value="vlans" className="mt-4">
           <Card>
             <CardContent className="p-0">
-              <Table>
-                <TableHeader>
-                  <TableRow className="table-header">
-                    <TableHead>VLAN ID</TableHead>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Network</TableHead>
-                    <TableHead>Site</TableHead>
-                    <TableHead>Assets</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredVlans.map((vlan) => (
-                    <TableRow key={vlan.id} className="cursor-pointer hover:bg-muted/50">
-                      <TableCell>
-                        <Badge variant="outline" className="font-mono">
-                          VLAN {vlan.vlan_id}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div>
-                          <p className="font-medium">{vlan.name}</p>
-                          <p className="text-xs text-muted-foreground">{vlan.description}</p>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <span className="text-sm">{vlan.network}</span>
-                      </TableCell>
-                      <TableCell>
-                        <span className="text-sm text-muted-foreground">{vlan.site}</span>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="secondary" className="text-xs">
-                          {vlan.asset_count} assets
-                        </Badge>
-                      </TableCell>
+              {vlansError && !loading && (
+                <div className="p-6 text-center">
+                  <AlertTriangle className="h-10 w-10 text-destructive mx-auto mb-3" />
+                  <p className="text-destructive font-medium mb-2">Failed to load VLANs</p>
+                  <p className="text-sm text-muted-foreground mb-4">{vlansError}</p>
+                  <Button onClick={fetchAll} variant="outline">
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Retry
+                  </Button>
+                </div>
+              )}
+              {!vlansError && (
+                <Table>
+                  <TableHeader>
+                    <TableRow className="table-header">
+                      <TableHead>VLAN ID</TableHead>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Network</TableHead>
+                      <TableHead>Site</TableHead>
+                      <TableHead>Assets</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredVlans.map((vlan) => (
+                      <TableRow key={vlan.id} className="cursor-pointer hover:bg-muted/50">
+                        <TableCell>
+                          <Badge variant="outline" className="font-mono">
+                            VLAN {vlan.vlan_id}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div>
+                            <p className="font-medium">{vlan.name}</p>
+                            <p className="text-xs text-muted-foreground">{vlan.description}</p>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <span className="text-sm">{vlan.network}</span>
+                        </TableCell>
+                        <TableCell>
+                          <span className="text-sm text-muted-foreground">{vlan.site}</span>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="secondary" className="text-xs">
+                            {vlan.asset_count} assets
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

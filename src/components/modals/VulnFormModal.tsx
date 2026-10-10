@@ -16,9 +16,15 @@ interface VulnFormModalProps {
   onSaved?: () => void;
 }
 
+const isValidCVSS = (value: string): boolean => {
+  if (!value || value.trim() === '') return true; // allow empty/null
+  const num = parseFloat(value);
+  return !isNaN(num) && num >= 0 && num <= 10 && value.match(/^\d+(\.\d)?$/); // max 1 decimal place
+};
+
 export default function VulnFormModal({ open, onOpenChange, initialAssetId = null, onSaved }: VulnFormModalProps) {
   const { user } = useAuth();
-  const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({
     title: "",
     cve_id: "",
@@ -27,6 +33,7 @@ export default function VulnFormModal({ open, onOpenChange, initialAssetId = nul
     status: "new",
     description: "",
   });
+  const [cvssError, setCvssError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) {
@@ -34,10 +41,15 @@ export default function VulnFormModal({ open, onOpenChange, initialAssetId = nul
     }
   }, [open]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) {
       toast.error('Sign in to create vulnerabilities');
+      return;
+    }
+    // Validate CVSS before submit
+    if (!isValidCVSS(form.cvss_score)) {
+      setCvssError('CVSS must be between 0.0 and 10.0 with max 1 decimal place');
       return;
     }
     setLoading(true);
@@ -85,9 +97,25 @@ export default function VulnFormModal({ open, onOpenChange, initialAssetId = nul
               <Label>CVE ID</Label>
               <Input value={form.cve_id} onChange={(e) => setForm({ ...form, cve_id: e.target.value })} />
             </div>
-            <div className="space-y-2">
+                        <div className="space-y-2">
               <Label>CVSS</Label>
-              <Input value={form.cvss_score} onChange={(e) => setForm({ ...form, cvss_score: e.target.value })} />
+              <Input
+                value={form.cvss_score}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setForm({ ...form, cvss_score: val });
+                  if (!isValidCVSS(val)) {
+                    setCvssError('CVSS must be between 0.0 and 10.0 with max 1 decimal place');
+                  } else {
+                    setCvssError(null);
+                  }
+                }}
+                placeholder="0.0 - 10.0"
+                aria-invalid={cvssError ? 'true' : 'false'}
+              />
+              {cvssError && (
+                <p className="text-sm text-destructive" role="alert">{cvssError}</p>
+              )}
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">

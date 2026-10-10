@@ -27,6 +27,7 @@ import {
   XCircle,
   PlayCircle,
   Shield,
+  RefreshCw,
 } from "lucide-react";
 import { format } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
@@ -125,17 +126,35 @@ export default function Incidents() {
     try {
       let q = supabase
         .from('incidents')
-        .select('id, incident_number, title, severity, status, affected_assets, opened_at, assigned_to')
+        .select('id, incident_number, title, severity, status, opened_at, closed_at')
         .order('opened_at', { ascending: false })
         .limit(1000);
       if (activeWorkspace?.id) q = q.eq('workspace_id', activeWorkspace.id as any);
       const { data, error } = await q;
       if (error) throw error;
-      setIncidents(data || []);
+      
+      // Fetch asset counts from incident_assets join table
+      if (data && data.length > 0) {
+        const incidentIds = data.map(i => i.id);
+        const { data: assetCounts } = await supabase
+          .from('incident_assets')
+          .select('incident_id')
+          .in('incident_id', incidentIds);
+        
+        const counts: Record<string, number> = {};
+        (assetCounts || []).forEach(ia => {
+          counts[ia.incident_id] = (counts[ia.incident_id] || 0) + 1;
+        });
+        
+        setIncidents(data.map(i => ({ ...i, affected_assets: counts[i.id] || 0 })));
+      } else {
+        setIncidents(data || []);
+      }
     } catch (err: any) {
       console.error('Failed to load incidents', err);
       setError(err.message || String(err));
-      toast.error('Failed to load incidents');
+      toast.error(`Failed to load incidents: ${err.message || String(err)}`);
+      setIncidents([]);
     } finally {
       setLoading(false);
     }
@@ -145,7 +164,7 @@ export default function Incidents() {
     fetchIncidents();
   }, [activeWorkspace?.id]);
 
-  const sourceIncidents = incidents === null ? demoIncidents : incidents;
+  const sourceIncidents = incidents === null ? demoIncidents : incidents || [];
 
   const filteredIncidents = sourceIncidents.filter((incident) => {
     const matchesSearch =
@@ -219,7 +238,19 @@ export default function Incidents() {
               <Clock className="h-5 w-5 text-primary" />
             </div>
             <div>
-              <p className="text-2xl font-bold">4.2h</p>
+              <p className="text-2xl font-bold">
+                {(() => {
+                  const closed = sourceIncidents.filter(i => i.status === 'closed' && i.closed_at && i.opened_at);
+                  if (closed.length === 0) return '—';
+                  const totalMs = closed.reduce((sum, i) => {
+                    const opened = new Date(i.opened_at).getTime();
+                    const closed_ = new Date(i.closed_at).getTime();
+                    return sum + (closed_ - opened);
+                  }, 0);
+                  const avgHours = totalMs / closed.length / 1000 / 60 / 60;
+                  return avgHours.toFixed(1) + 'h';
+                })()}
+              </p>
               <p className="text-xs text-muted-foreground">Avg. Response Time</p>
             </div>
           </CardContent>
@@ -277,57 +308,68 @@ export default function Incidents() {
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow className="table-header">
-                  <TableHead>Incident</TableHead>
-                  <TableHead>Severity</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Assets</TableHead>
-                  <TableHead>Opened</TableHead>
-                  <TableHead>Assigned To</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredIncidents.map((incident) => {
-                  const statusConfig = getStatusConfig(incident.status);
-                  const StatusIcon = statusConfig.icon;
-                  
-                  return (
-                    <TableRow key={incident.id} className="cursor-pointer hover:bg-muted/50">
-                      <TableCell>
-                        <div>
-                          <p className="font-mono text-xs text-muted-foreground">{incident.incident_number}</p>
-                          <p className="font-medium">{incident.title}</p>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className={`text-xs ${getSeverityBadge(incident.severity)}`}>
-                          {incident.severity}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className={`text-xs ${statusConfig.color}`}>
-                          <StatusIcon className="h-3 w-3 mr-1" />
-                          {statusConfig.label}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="secondary" className="text-xs">
-                          {incident.affected_assets} asset{incident.affected_assets !== 1 ? "s" : ""}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {format(incident.opened_at, "MMM d, h:mm a")}
-                      </TableCell>
-                      <TableCell className="text-sm">{incident.assigned_to}</TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
+          {error && !loading && (
+            <div className="p-6 text-center">
+              <AlertTriangle className="h-10 w-10 text-destructive mx-auto mb-3" />
+              <p className="text-destructive font-medium mb-2">Failed to load incidents</p>
+              <p className="text-sm text-muted-foreground mb-4">{error}</p>
+              <Button onClick={fetchIncidents} variant="outline">
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Retry
+              </Button>
+            </div>
+          )}
+          {!error && (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="table-header">
+                    <TableHead>Incident</TableHead>
+                    <TableHead>Severity</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Assets</TableHead>
+                    <TableHead>Opened</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredIncidents.map((incident) => {
+                    const statusConfig = getStatusConfig(incident.status);
+                    const StatusIcon = statusConfig.icon;
+                    
+                    return (
+                      <TableRow key={incident.id} className="cursor-pointer hover:bg-muted/50">
+                        <TableCell>
+                          <div>
+                            <p className="font-mono text-xs text-muted-foreground">{incident.incident_number}</p>
+                            <p className="font-medium">{incident.title}</p>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={`text-xs ${getSeverityBadge(incident.severity)}`}>
+                            {incident.severity}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={`text-xs ${statusConfig.color}`}>
+                            <StatusIcon className="h-3 w-3 mr-1" />
+                            {statusConfig.label}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="secondary" className="text-xs">
+                            {incident.affected_assets} asset{incident.affected_assets !== 1 ? "s" : ""}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {format(new Date(incident.opened_at), "MMM d, h:mm a")}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

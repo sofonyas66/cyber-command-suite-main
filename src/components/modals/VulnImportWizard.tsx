@@ -82,6 +82,7 @@ interface DeduplicatedVuln {
   isNew: boolean;
   existingId?: string;
   linkedAssets: string[];
+  cvssInvalid?: boolean;
 }
 
 const SLA_DAYS: Record<string, number> = {
@@ -253,6 +254,12 @@ export function VulnImportWizard({ open, onOpenChange, onImportComplete }: VulnI
     setMapping(newMapping);
   };
 
+  const isValidCVSS = (value: string): boolean => {
+    if (!value || value.trim() === '') return true; // allow empty/null
+    const num = parseFloat(value);
+    return !isNaN(num) && num >= 0 && num <= 10 && value.match(/^\d+(\.\d)?$/);
+  };
+
   const normalizeSeverity = (value: string): string => {
     const lower = value.toLowerCase().trim();
     if (lower.includes("critical") || lower === "4") return "critical";
@@ -303,46 +310,53 @@ export function VulnImportWizard({ open, onOpenChange, onImportComplete }: VulnI
         
         const key = `${pluginId}-${title}`.toLowerCase();
         
+        const cvssValue = row[mapping.cvss_score];
+        const cvssValid = isValidCVSS(cvssValue);
+        
         if (vulnMap.has(key)) {
-          // Add host to existing vuln
-          const existing = vulnMap.get(key)!;
-          const hostExists = existing.affected_hosts.some(
-            h => h.ip === hostIp && h.hostname === hostname
-          );
-          if (!hostExists && (hostIp || hostname)) {
-            existing.affected_hosts.push({ ip: hostIp, hostname });
-            // Link asset
-            const assetId = assetByIp.get(hostIp) || assetByHostname.get(hostname.toLowerCase());
-            if (assetId && !existing.linkedAssets.includes(assetId)) {
-              existing.linkedAssets.push(assetId);
-            }
-          }
+      // Add host to existing vuln
+      const existing = vulnMap.get(key)!;
+      const hostExists = existing.affected_hosts.some(
+        h => h.ip === hostIp && h.hostname === hostname
+      );
+      if (!hostExists && (hostIp || hostname)) {
+        existing.affected_hosts.push({ ip: hostIp, hostname });
+        // Link asset
+        const assetId = assetByIp.get(hostIp) || assetByHostname.get(hostname.toLowerCase());
+        if (assetId && !existing.linkedAssets.includes(assetId)) {
+          existing.linkedAssets.push(assetId);
+        }
+        // If the new row has invalid CVSS, mark the vuln as invalid
+        if (!cvssValid) {
+          existing.cvssInvalid = true;
+        }
+      }
         } else {
-          // Create new dedup entry
-          const cvssValue = row[mapping.cvss_score];
-          const severity = normalizeSeverity(row[mapping.severity] || "");
-          const linkedAssets: string[] = [];
+      // Create new dedup entry
+      const severity = normalizeSeverity(row[mapping.severity] || "");
+      const linkedAssets: string[] = [];
           
-          const assetId = assetByIp.get(hostIp) || assetByHostname.get(hostname.toLowerCase());
-          if (assetId) linkedAssets.push(assetId);
+      const assetId = assetByIp.get(hostIp) || assetByHostname.get(hostname.toLowerCase());
+      if (assetId) linkedAssets.push(assetId);
 
-          const existingVuln = existingMap.get(title.toLowerCase());
+      const existingVuln = existingMap.get(title.toLowerCase());
 
-          vulnMap.set(key, {
-            key,
-            title,
-            cve_id: row[mapping.cve_id] || null,
-            cvss_score: cvssValue ? parseFloat(cvssValue) : null,
-            severity,
-            description: row[mapping.description] || null,
-            solution: row[mapping.solution] || null,
-            source: row[mapping.source] || scannerType.charAt(0).toUpperCase() + scannerType.slice(1),
-            plugin_id: pluginId,
-            affected_hosts: hostIp || hostname ? [{ ip: hostIp, hostname }] : [],
-            isNew: !existingVuln,
-            existingId: existingVuln?.id,
-            linkedAssets,
-          });
+      vulnMap.set(key, {
+        key,
+        title,
+        cve_id: row[mapping.cve_id] || null,
+        cvss_score: cvssValue && cvssValid ? parseFloat(cvssValue) : null,
+        severity,
+        description: row[mapping.description] || null,
+        solution: row[mapping.solution] || null,
+        source: row[mapping.source] || scannerType.charAt(0).toUpperCase() + scannerType.slice(1),
+        plugin_id: pluginId,
+        affected_hosts: hostIp || hostname ? [{ ip: hostIp, hostname }] : [],
+        isNew: !existingVuln,
+        existingId: existingVuln?.id,
+        linkedAssets,
+        cvssInvalid: !cvssValid && !!cvssValue,
+      });
         }
       });
 
@@ -674,6 +688,7 @@ export function VulnImportWizard({ open, onOpenChange, onImportComplete }: VulnI
                       <TableHead>Status</TableHead>
                       <TableHead>Title</TableHead>
                       <TableHead>CVE</TableHead>
+                      <TableHead>CVSS</TableHead>
                       <TableHead>Severity</TableHead>
                       <TableHead>Hosts</TableHead>
                       <TableHead>Assets</TableHead>
@@ -699,6 +714,15 @@ export function VulnImportWizard({ open, onOpenChange, onImportComplete }: VulnI
                         </TableCell>
                         <TableCell className="text-xs font-mono">
                           {vuln.cve_id || "-"}
+                        </TableCell>
+                        <TableCell>
+                          {vuln.cvssInvalid ? (
+                            <span className="text-destructive font-medium">Invalid</span>
+                          ) : vuln.cvss_score !== null ? (
+                            <span>{vuln.cvss_score.toFixed(1)}</span>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
                         </TableCell>
                         <TableCell>
                           <Badge
@@ -735,7 +759,7 @@ export function VulnImportWizard({ open, onOpenChange, onImportComplete }: VulnI
                   <ArrowLeft className="h-4 w-4 mr-2" />
                   Back
                 </Button>
-                <Button onClick={handleImport} disabled={deduplicated.length === 0}>
+                <Button onClick={handleImport} disabled={deduplicated.length === 0 || deduplicated.some(v => v.cvssInvalid)}>
                   Import {deduplicated.length} Vulnerabilities
                   <ArrowRight className="h-4 w-4 ml-2" />
                 </Button>
