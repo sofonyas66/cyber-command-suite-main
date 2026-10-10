@@ -33,6 +33,7 @@ import { format } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import { useWorkspace } from "@/hooks/useWorkspace";
 import { toast } from "sonner";
+import IncidentFormModal from "@/components/modals/IncidentFormModal";
 
 const demoIncidents = [
   {
@@ -117,6 +118,7 @@ export default function Incidents() {
   const { activeWorkspace } = useWorkspace();
 
   const [incidents, setIncidents] = useState<any[] | null>(null);
+  const [incidentModalOpen, setIncidentModalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -187,11 +189,12 @@ export default function Incidents() {
           <h1 className="text-2xl font-bold">Incidents</h1>
           <p className="text-muted-foreground">Track and manage security incidents</p>
         </div>
-        <Button size="sm">
+        <Button size="sm" onClick={() => setIncidentModalOpen(true)}>
           <Plus className="h-4 w-4 mr-2" />
           New Incident
         </Button>
       </div>
+      <IncidentFormModal open={incidentModalOpen} onOpenChange={setIncidentModalOpen} onSaved={fetchIncidents} />
 
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

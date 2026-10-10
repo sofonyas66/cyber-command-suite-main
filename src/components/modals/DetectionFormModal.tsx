@@ -18,16 +18,24 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { useState } from "react";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+import { useWorkspace } from "@/hooks/useWorkspace";
 
 interface DetectionFormModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onSaved?: () => void;
 }
 
 export default function DetectionFormModal({
   open,
   onOpenChange,
+  onSaved,
 }: DetectionFormModalProps) {
+  const { user } = useAuth();
+  const { activeWorkspace } = useWorkspace();
+  const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
     platform: "Splunk",
@@ -41,11 +49,71 @@ export default function DetectionFormModal({
     notes: "",
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // TODO: Implement actual save with Supabase
-    toast.success("Detection created successfully");
-    onOpenChange(false);
+    if (!user) {
+      toast.error("Sign in to create detections");
+      return;
+    }
+    if (!activeWorkspace?.id) {
+      toast.error("No workspace selected");
+      return;
+    }
+    setLoading(true);
+    try {
+      const payload: any = {
+        user_id: user.id,
+        workspace_id: activeWorkspace.id,
+        name: formData.name,
+        platform: formData.platform,
+        query_text: formData.query_text || null,
+        schedule: formData.schedule || null,
+        enabled: formData.enabled,
+        severity: formData.severity,
+        mitre_techniques: formData.mitre_techniques
+          ? formData.mitre_techniques
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean)
+          : [],
+        data_sources: formData.data_sources
+          ? formData.data_sources
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean)
+          : [],
+        owner: formData.owner || null,
+        notes: formData.notes || null,
+        tags: [],
+      };
+      const { data, error } = await supabase
+        .from("detections")
+        .insert([payload])
+        .select()
+        .single();
+      if (error) throw error;
+      if (!data) throw new Error("Insert returned no row");
+      toast.success("Detection created");
+      onOpenChange(false);
+      setFormData({
+        name: "",
+        platform: "Splunk",
+        query_text: "",
+        schedule: "*/5 * * * *",
+        enabled: true,
+        severity: "medium",
+        mitre_techniques: "",
+        data_sources: "",
+        owner: "",
+        notes: "",
+      });
+      onSaved?.();
+    } catch (err: any) {
+      console.error("Create detection failed", err);
+      toast.error(err.message || String(err));
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -211,7 +279,9 @@ export default function DetectionFormModal({
               >
                 Cancel
               </Button>
-              <Button type="submit">Create Detection</Button>
+              <Button type="submit" disabled={loading}>
+                {loading ? "Saving..." : "Create Detection"}
+              </Button>
             </div>
           </div>
         </form>

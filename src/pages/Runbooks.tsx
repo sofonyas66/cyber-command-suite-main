@@ -19,6 +19,8 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useWorkspace } from "@/hooks/useWorkspace";
+import { useAuth } from "@/hooks/useAuth";
+import RunbookFormModal from "@/components/modals/RunbookFormModal";
 
 const demoRunbooks = [
   {
@@ -122,6 +124,7 @@ export default function Runbooks() {
   const { activeWorkspace } = useWorkspace();
 
   const [runbooks, setRunbooks] = useState<any[] | null>(null);
+  const [runbookModalOpen, setRunbookModalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -184,11 +187,13 @@ export default function Runbooks() {
           <h1 className="text-2xl font-bold">Runbooks</h1>
           <p className="text-muted-foreground">Standard operating procedures and playbooks</p>
         </div>
-        <Button size="sm">
+        <Button size="sm" onClick={() => setRunbookModalOpen(true)}>
           <Plus className="h-4 w-4 mr-2" />
           Create Runbook
         </Button>
       </div>
+
+      <RunbookFormModal open={runbookModalOpen} onOpenChange={setRunbookModalOpen} onSaved={fetchRunbooks} />
 
       {/* Search */}
       <div className="relative max-w-md">

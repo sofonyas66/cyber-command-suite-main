@@ -520,7 +520,7 @@ export default function Detections() {
       />
 
       {/* Form Modal */}
-      <DetectionFormModal open={isFormOpen} onOpenChange={setIsFormOpen} />
+      <DetectionFormModal open={isFormOpen} onOpenChange={setIsFormOpen} onSaved={fetchDetections} />
     </div>
   );
 }
