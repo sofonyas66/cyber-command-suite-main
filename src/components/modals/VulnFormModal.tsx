@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useWorkspace } from "@/hooks/useWorkspace";
 
 interface VulnFormModalProps {
   open: boolean;
@@ -24,6 +25,7 @@ const isValidCVSS = (value: string): boolean => {
 
 export default function VulnFormModal({ open, onOpenChange, initialAssetId = null, onSaved }: VulnFormModalProps) {
   const { user } = useAuth();
+  const { activeWorkspace } = useWorkspace();
     const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({
     title: "",
@@ -47,6 +49,10 @@ export default function VulnFormModal({ open, onOpenChange, initialAssetId = nul
       toast.error('Sign in to create vulnerabilities');
       return;
     }
+    if (!activeWorkspace?.id) {
+      toast.error('No workspace selected');
+      return;
+    }
     // Validate CVSS before submit
     if (!isValidCVSS(form.cvss_score)) {
       setCvssError('CVSS must be between 0.0 and 10.0 with max 1 decimal place');
@@ -54,8 +60,9 @@ export default function VulnFormModal({ open, onOpenChange, initialAssetId = nul
     }
     setLoading(true);
     try {
-      const payload: any = {
+            const payload: any = {
         user_id: user.id,
+        workspace_id: activeWorkspace.id,
         title: form.title,
         cve_id: form.cve_id || null,
         cvss_score: form.cvss_score ? parseFloat(form.cvss_score) : null,

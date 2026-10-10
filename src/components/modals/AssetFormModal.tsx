@@ -108,7 +108,12 @@ export default function AssetFormModal({ open, onOpenChange, asset = null, onSav
           setLoading(false);
           return;
         }
-        if (activeWorkspace?.id) payload.workspace_id = activeWorkspace.id;
+        if (!activeWorkspace?.id) {
+          toast.error('No workspace selected');
+          setLoading(false);
+          return;
+        }
+        payload.workspace_id = activeWorkspace.id;
         payload.user_id = user.id;
         const { error } = await supabase.from('assets').insert([payload]);
         if (error) throw error;
