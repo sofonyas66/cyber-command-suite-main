@@ -218,8 +218,8 @@ export default function IntegrationsTab() {
           url: newIntegration.url,
           webhook_token: webhookToken, // Secure token for webhook authentication
         },
-        user_id: user.id,
-        workspace_id: activeWorkspace.id,
+        user_id: user?.id ? (user.id as any) : null,
+        workspace_id: activeWorkspace?.id ? (activeWorkspace.id as any) : null,
       })
       .select()
       .single();
@@ -299,6 +299,7 @@ export default function IntegrationsTab() {
       .from("sync_runs")
       .insert({
         integration_id: integrationId,
+        workspace_id: activeWorkspace?.id ? (activeWorkspace.id as any) : null,
         status: "running",
       })
       .select()
@@ -376,8 +377,8 @@ export default function IntegrationsTab() {
       owner: search.owner,
       data_sources: [search.app],
       tags: ["imported", "splunk"],
-      user_id: user.id,
-      workspace_id: activeWorkspace.id,
+      user_id: user?.id ? (user.id as any) : null,
+      workspace_id: activeWorkspace?.id ? (activeWorkspace.id as any) : null,
     }));
 
     const { error } = await supabase.from("detections").insert(detections);

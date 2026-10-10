@@ -15,6 +15,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import GlobalSearchModal from "@/components/modals/GlobalSearchModal";
+import { useWorkspace } from "@/hooks/useWorkspace";
+import { supabase } from "@/integrations/supabase/client";
 import { WorkspaceSwitcher } from "@/components/navigation/WorkspaceSwitcher";
 
 interface TopBarProps {
@@ -25,9 +27,24 @@ interface TopBarProps {
 export default function TopBar({ onQuickAdd, onNotifications }: TopBarProps) {
   const { theme, setTheme } = useTheme();
   const { user, signOut } = useAuth();
+  const { activeWorkspace } = useWorkspace();
   const navigate = useNavigate();
   const [searchOpen, setSearchOpen] = useState(false);
-  const [unreadCount] = useState(3);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    const fetchUnread = async () => {
+      try {
+        let q = supabase.from('notifications').select('id', { count: 'exact' }).eq('read', false);
+        if (activeWorkspace?.id) q = q.eq('workspace_id', activeWorkspace.id as any);
+        const { count, error } = await q;
+        if (!error && count !== null) setUnreadCount(count);
+      } catch {
+        setUnreadCount(0);
+      }
+    };
+    fetchUnread();
+  }, [activeWorkspace?.id]);
 
   // Keyboard shortcut for search
   useEffect(() => {

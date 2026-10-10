@@ -24,42 +24,10 @@ import { useWorkspace } from "@/hooks/useWorkspace";
 import { format, subWeeks, startOfWeek, endOfWeek, differenceInDays } from "date-fns";
 
 const kpiData = [
-  {
-    title: "Open Vulnerabilities",
-    value: "47",
-    change: "-12%",
-    trend: "down",
-    icon: ShieldAlert,
-    color: "text-destructive",
-    bgColor: "bg-destructive/10",
-  },
-  {
-    title: "Active Incidents",
-    value: "3",
-    change: "+1",
-    trend: "up",
-    icon: AlertTriangle,
-    color: "text-warning",
-    bgColor: "bg-warning/10",
-  },
-  {
-    title: "Assets Monitored",
-    value: "156",
-    change: "+8",
-    trend: "up",
-    icon: Server,
-    color: "text-primary",
-    bgColor: "bg-primary/10",
-  },
-  {
-    title: "Active Detections",
-    value: "24",
-    change: "+3",
-    trend: "up",
-    icon: Radar,
-    color: "text-chart-1",
-    bgColor: "bg-chart-1/10",
-  },
+  { title: "Open Vulnerabilities", value: "47", change: null, trend: "down", icon: ShieldAlert, color: "text-destructive", bgColor: "bg-destructive/10" },
+  { title: "Active Incidents", value: "3", change: null, trend: "up", icon: AlertTriangle, color: "text-warning", bgColor: "bg-warning/10" },
+  { title: "Assets Monitored", value: "156", change: null, trend: "up", icon: Server, color: "text-primary", bgColor: "bg-primary/10" },
+  { title: "Active Detections", value: "24", change: null, trend: "up", icon: Radar, color: "text-chart-1", bgColor: "bg-chart-1/10" },
 ];
 
 const detectionStats = {
@@ -389,9 +357,11 @@ export default function Dashboard() {
                       <TrendingUp
                         className={`h-3 w-3 ${kpi.trend === "down" ? "text-success rotate-180" : "text-muted-foreground"}`}
                       />
-                      <span className={`text-xs ${kpi.trend === "down" ? "text-success" : "text-muted-foreground"}`}>
-                        {kpi.change} from last week
-                      </span>
+                      {kpi.change !== null && (
+                        <span className={`text-xs ${kpi.trend === "down" ? "text-success" : "text-muted-foreground"}`}>
+                          {kpi.change} from last week
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div className={`p-2.5 rounded-lg ${kpi.bgColor}`}>
@@ -463,6 +433,12 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="h-[180px]">
+              {sourceVulnBySeverity.every((s: any) => s.value === 0) ? (
+                <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-2">
+                  <Shield className="h-8 w-8 opacity-40" />
+                  <p className="text-sm">No open vulnerabilities</p>
+                </div>
+              ) : (
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
@@ -486,7 +462,8 @@ export default function Dashboard() {
                     }}
                   />
                 </PieChart>
-              </ResponsiveContainer>
+                </ResponsiveContainer>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-2 mt-2">
               {sourceVulnBySeverity.map((item) => (

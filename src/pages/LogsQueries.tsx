@@ -184,6 +184,15 @@ export default function LogsQueries() {
 
         {/* Saved Queries */}
         <TabsContent value="queries" className="space-y-4">
+          {filteredQueries.length === 0 && (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <Terminal className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
+                <h3 className="font-medium mb-1">No saved queries yet</h3>
+                <p className="text-sm text-muted-foreground">Queries will appear here once saved to the database.</p>
+              </CardContent>
+            </Card>
+          )}
           {filteredQueries.map((query) => (
             <Card key={query.id} className="card-hover">
               <CardContent className="p-4">

@@ -402,6 +402,14 @@ export default function Changes() {
     </div>
 
     {/* Changes Table */}
+    {filteredChanges.length === 0 && !loading && (
+      <div className="py-12 text-center text-muted-foreground">
+        <FileText className="h-10 w-10 mx-auto mb-3 opacity-40" />
+        <p className="font-medium">No change requests yet</p>
+        <p className="text-sm">Create your first change request using the New Change Request button.</p>
+      </div>
+    )}
+    {filteredChanges.length > 0 && (
     <Card>
     <CardContent className="p-0">
     <Table>
@@ -471,6 +479,7 @@ export default function Changes() {
     </Table>
     </CardContent>
     </Card>
+    )}
 
     {/* Change Detail Dialog */}
     <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
