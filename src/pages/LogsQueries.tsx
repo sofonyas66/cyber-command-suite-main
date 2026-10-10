@@ -20,71 +20,8 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useWorkspace } from "@/hooks/useWorkspace";
 
-const demoQueries = [
-  {
-    id: "1",
-    title: "Failed SSH Logins",
-    query: 'source="auth.log" "Failed password" | stats count by src_ip | sort -count',
-    log_source: "Splunk",
-    description: "Detect brute force SSH attempts",
-    tags: ["ssh", "brute-force", "auth"],
-    starred: true,
-    last_used: new Date(Date.now() - 1000 * 60 * 60 * 2),
-  },
-  {
-    id: "2",
-    title: "Windows Event 4625",
-    query: 'index=windows EventCode=4625 | table _time, Account_Name, Workstation_Name, Failure_Reason',
-    log_source: "Splunk",
-    description: "Failed Windows logon attempts",
-    tags: ["windows", "auth", "4625"],
-    starred: true,
-    last_used: new Date(Date.now() - 1000 * 60 * 60 * 24),
-  },
-  {
-    id: "3",
-    title: "Firewall Denies",
-    query: 'action:blocked OR action:denied | stats count by src.ip, dst.port | sort -count | head 20',
-    log_source: "ELK",
-    description: "Top blocked connections",
-    tags: ["firewall", "network"],
-    starred: false,
-    last_used: new Date(Date.now() - 1000 * 60 * 60 * 24 * 3),
-  },
-  {
-    id: "4",
-    title: "PowerShell Execution",
-    query: 'EventCode=4104 | regex ScriptBlockText="(?i)(invoke-|iex|downloadstring|webclient)"',
-    log_source: "Splunk",
-    description: "Suspicious PowerShell commands",
-    tags: ["powershell", "hunting", "execution"],
-    starred: false,
-    last_used: new Date(Date.now() - 1000 * 60 * 60 * 24 * 7),
-  },
-];
 
 // TODO: no saved_queries table exists yet, this is placeholder-only
-const demoSnippets = [
-  {
-    id: "1",
-    title: "Suspicious Base64 Decode",
-    content: `Dec 19 14:32:15 webserver-01 nginx: 10.0.2.45 - - [19/Dec/2024:14:32:15 +0000] "GET /api/exec?cmd=cG93ZXJzaGVsbCAtZW5jb2RlZGNvbW1hbmQgSUVY... HTTP/1.1" 200 1234`,
-    notes: "Possible command injection attempt via base64 encoded payload",
-    tags: ["injection", "suspicious"],
-    created: new Date(Date.now() - 1000 * 60 * 30),
-  },
-  {
-    id: "2",
-    title: "Credential Dumping Alert",
-    content: `2024-12-19T10:15:23.456Z LSASS.exe accessed by mimikatz.exe (PID: 4532)
-Process: C:\\Users\\admin\\Desktop\\mimikatz.exe
-User: CORP\\admin
-Access: 0x1010`,
-    notes: "Credential harvesting detected - IR required",
-    tags: ["credential-theft", "incident"],
-    created: new Date(Date.now() - 1000 * 60 * 60 * 4),
-  },
-];
 
 export default function LogsQueries() {
   const [searchQuery, setSearchQuery] = useState("");
@@ -121,9 +58,9 @@ export default function LogsQueries() {
     fetchSnippets();
   }, [activeWorkspace?.id]);
 
-  const sourceSnippets = snippets === null ? demoSnippets : snippets;
+  const sourceSnippets = snippets === null ? [] : snippets;
 
-  const filteredQueries = demoQueries.filter((query) => {
+  const filteredQueries = [].filter((query) => {
     const matchesSearch =
       query.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       query.query.toLowerCase().includes(searchQuery.toLowerCase()) ||

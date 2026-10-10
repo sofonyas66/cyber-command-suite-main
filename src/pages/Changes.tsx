@@ -92,7 +92,7 @@ interface Change {
 }
 
 // Demo data
-const demoChanges: Change[] = [
+const []: Change[] = [
   {
     id: "1",
     change_number: "CHG-00001",
@@ -280,7 +280,7 @@ export default function Changes() {
     fetchChanges();
   }, [activeWorkspace?.id]);
 
-  const sourceChanges = changes === null ? demoChanges : changes;
+  const sourceChanges = changes === null ? [] : changes;
 
   const filteredChanges = sourceChanges.filter((change) => {
     const matchesSearch = change.title.toLowerCase().includes(searchQuery.toLowerCase()) ||

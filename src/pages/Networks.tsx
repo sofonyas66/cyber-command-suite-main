@@ -25,27 +25,8 @@ import { useWorkspace } from "@/hooks/useWorkspace";
 import { toast } from "sonner";
 
 // Demo data
-const demoSites = [
-  { id: "1", name: "HQ - New York", address: "123 Main St, New York, NY", description: "Main headquarters", network_count: 3, asset_count: 89 },
-  { id: "2", name: "DC - Virginia", address: "456 Data Center Dr, Ashburn, VA", description: "Primary data center", network_count: 5, asset_count: 124 },
-  { id: "3", name: "Branch - Chicago", address: "789 Branch Ave, Chicago, IL", description: "Chicago branch office", network_count: 2, asset_count: 32 },
-];
 
-const demoNetworks = [
-  { id: "1", name: "Corporate LAN", cidr: "10.0.0.0/16", vlan_id: 100, firewall_zone: "Internal", gateway: "10.0.0.1", description: "Main corporate network", asset_count: 89, site: "HQ - New York" },
-  { id: "2", name: "Server VLAN", cidr: "10.0.1.0/24", vlan_id: 110, firewall_zone: "Servers", gateway: "10.0.1.1", description: "Production servers", asset_count: 24, site: "DC - Virginia" },
-  { id: "3", name: "DMZ", cidr: "192.168.100.0/24", vlan_id: 200, firewall_zone: "DMZ", gateway: "192.168.100.1", description: "Demilitarized zone for public services", asset_count: 8, site: "DC - Virginia" },
-  { id: "4", name: "Guest WiFi", cidr: "172.16.0.0/22", vlan_id: 300, firewall_zone: "Guest", gateway: "172.16.0.1", description: "Guest wireless network", asset_count: 0, site: "HQ - New York" },
-  { id: "5", name: "Management", cidr: "10.255.0.0/24", vlan_id: 999, firewall_zone: "Management", gateway: "10.255.0.1", description: "Network device management", asset_count: 35, site: "DC - Virginia" },
-];
 
-const demoVlans = [
-  { id: "1", vlan_id: 100, name: "Corporate", description: "Corporate workstations", network: "Corporate LAN", site: "HQ - New York", asset_count: 89 },
-  { id: "2", vlan_id: 110, name: "Servers", description: "Production servers", network: "Server VLAN", site: "DC - Virginia", asset_count: 24 },
-  { id: "3", vlan_id: 200, name: "DMZ", description: "Public-facing services", network: "DMZ", site: "DC - Virginia", asset_count: 8 },
-  { id: "4", vlan_id: 300, name: "Guest", description: "Guest network", network: "Guest WiFi", site: "HQ - New York", asset_count: 0 },
-  { id: "5", vlan_id: 999, name: "Mgmt", description: "Management network", network: "Management", site: "DC - Virginia", asset_count: 35 },
-];
 
 const getZoneColor = (zone: string) => {
   switch (zone.toLowerCase()) {
@@ -133,9 +114,9 @@ export default function Networks() {
     fetchAll();
   }, [activeWorkspace?.id]);
 
-  const sourceNetworks = networks === null ? demoNetworks : networks || [];
-  const sourceVlans = vlans === null ? demoVlans : vlans || [];
-  const sourceSites = sites === null ? demoSites : sites || [];
+  const sourceNetworks = networks === null ? [] : networks || [];
+  const sourceVlans = vlans === null ? [] : vlans || [];
+  const sourceSites = sites === null ? [] : sites || [];
 
   const filteredNetworks = sourceNetworks.filter((network) => {
     const matchesSearch = network.name.toLowerCase().includes(searchQuery.toLowerCase()) ||

@@ -60,7 +60,7 @@ interface Detection {
   false_positive_rate: number;
 }
 
-const demoDetections: Detection[] = [
+const []: Detection[] = [
   {
     id: "1",
     name: "Suspicious PowerShell Execution",
@@ -204,7 +204,7 @@ export default function Detections() {
     fetchDetections();
   }, [activeWorkspace?.id]);
 
-  const sourceDetections = detections === null ? demoDetections : detections;
+  const sourceDetections = detections === null ? [] : detections;
 
   const filteredDetections = sourceDetections.filter((detection) => {
     const matchesSearch =
@@ -224,7 +224,7 @@ export default function Detections() {
     // optimistic update for UI
     if (detections === null) {
       setDetections((prev: any) =>
-        (prev || demoDetections).map((d: any) => (d.id === id ? { ...d, enabled: !d.enabled } : d))
+        (prev || []).map((d: any) => (d.id === id ? { ...d, enabled: !d.enabled } : d))
       );
       toast.success("Detection status updated");
       return;

@@ -22,100 +22,6 @@ import { useWorkspace } from "@/hooks/useWorkspace";
 import { useAuth } from "@/hooks/useAuth";
 import RunbookFormModal from "@/components/modals/RunbookFormModal";
 
-const demoRunbooks = [
-  {
-    id: "1",
-    title: "Phishing Email Triage",
-    category: "Email Security",
-    description: "Step-by-step process for investigating reported phishing emails",
-    steps: [
-      { id: "1", text: "Collect the reported email (screenshot + headers)", completed: false },
-      { id: "2", text: "Extract and analyze URLs using sandbox", completed: false },
-      { id: "3", text: "Check sender reputation and domain age", completed: false },
-      { id: "4", text: "Search mailbox for similar emails", completed: false },
-      { id: "5", text: "Block sender/domain if malicious", completed: false },
-      { id: "6", text: "Delete emails from all mailboxes", completed: false },
-      { id: "7", text: "Notify affected users", completed: false },
-      { id: "8", text: "Document in incident tracker", completed: false },
-    ],
-    commands: [
-      { label: "Search mailbox (O365)", cmd: 'Search-Mailbox -Identity * -SearchQuery "from:malicious@domain.com" -DeleteContent' },
-      { label: "Check sender reputation", cmd: "curl https://emailrep.io/malicious@domain.com" },
-    ],
-    tags: ["phishing", "email", "incident-response"],
-    last_used: new Date(Date.now() - 1000 * 60 * 60 * 24 * 2),
-    use_count: 47,
-  },
-  {
-    id: "2",
-    title: "Malware Isolation Procedure",
-    category: "Endpoint Security",
-    description: "Isolate and contain a potentially compromised endpoint",
-    steps: [
-      { id: "1", text: "Isolate endpoint from network via EDR", completed: false },
-      { id: "2", text: "Collect volatile data (memory, processes)", completed: false },
-      { id: "3", text: "Create disk image for forensics", completed: false },
-      { id: "4", text: "Run full malware scan", completed: false },
-      { id: "5", text: "Collect and preserve logs", completed: false },
-      { id: "6", text: "Identify and document IOCs", completed: false },
-      { id: "7", text: "Hunt for lateral movement", completed: false },
-      { id: "8", text: "Remediate and restore from clean image", completed: false },
-    ],
-    commands: [
-      { label: "CrowdStrike isolate", cmd: "falcon_isolate --hostname <TARGET> --reason 'Malware investigation'" },
-      { label: "Memory dump", cmd: "winpmem_mini_x64.exe memory.raw" },
-    ],
-    tags: ["malware", "isolation", "forensics"],
-    last_used: new Date(Date.now() - 1000 * 60 * 60 * 24 * 7),
-    use_count: 23,
-  },
-  {
-    id: "3",
-    title: "Firewall Change Request",
-    category: "Network Security",
-    description: "Process for implementing firewall rule changes",
-    steps: [
-      { id: "1", text: "Review and validate change request", completed: false },
-      { id: "2", text: "Verify business justification", completed: false },
-      { id: "3", text: "Check for security implications", completed: false },
-      { id: "4", text: "Create rule in staging environment", completed: false },
-      { id: "5", text: "Test connectivity", completed: false },
-      { id: "6", text: "Get approval from security manager", completed: false },
-      { id: "7", text: "Implement in production", completed: false },
-      { id: "8", text: "Verify and document", completed: false },
-    ],
-    commands: [
-      { label: "Show current rules", cmd: "show configuration security policies" },
-      { label: "Commit changes", cmd: "commit confirmed 5" },
-    ],
-    tags: ["firewall", "change-management", "network"],
-    last_used: new Date(Date.now() - 1000 * 60 * 60 * 24 * 1),
-    use_count: 89,
-  },
-  {
-    id: "4",
-    title: "User Account Lockout",
-    category: "Identity & Access",
-    description: "Investigate and resolve account lockout issues",
-    steps: [
-      { id: "1", text: "Verify user identity", completed: false },
-      { id: "2", text: "Check lockout reason in AD", completed: false },
-      { id: "3", text: "Review failed login attempts", completed: false },
-      { id: "4", text: "Identify source of lockout", completed: false },
-      { id: "5", text: "Check for cached credentials", completed: false },
-      { id: "6", text: "Reset password if needed", completed: false },
-      { id: "7", text: "Unlock account", completed: false },
-      { id: "8", text: "Monitor for recurrence", completed: false },
-    ],
-    commands: [
-      { label: "Check lockout status", cmd: 'Get-ADUser -Identity <username> -Properties LockedOut,LastBadPasswordAttempt' },
-      { label: "Unlock account", cmd: 'Unlock-ADAccount -Identity <username>' },
-    ],
-    tags: ["active-directory", "lockout", "helpdesk"],
-    last_used: new Date(Date.now() - 1000 * 60 * 60 * 2),
-    use_count: 156,
-  },
-];
 
 export default function Runbooks() {
   const [searchQuery, setSearchQuery] = useState("");
@@ -150,7 +56,7 @@ export default function Runbooks() {
     fetchRunbooks();
   }, [activeWorkspace?.id]);
 
-  const sourceRunbooks = runbooks === null ? demoRunbooks : runbooks;
+  const sourceRunbooks = runbooks === null ? [] : runbooks;
 
   const filteredRunbooks = sourceRunbooks.filter(
     (runbook) =>

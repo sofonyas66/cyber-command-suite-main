@@ -23,82 +23,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { useWorkspace } from "@/hooks/useWorkspace";
 import { format, subWeeks, startOfWeek, endOfWeek, differenceInDays } from "date-fns";
 
-const kpiData = [
-  { title: "Open Vulnerabilities", value: "47", change: null, trend: "down", icon: ShieldAlert, color: "text-destructive", bgColor: "bg-destructive/10" },
-  { title: "Active Incidents", value: "3", change: null, trend: "up", icon: AlertTriangle, color: "text-warning", bgColor: "bg-warning/10" },
-  { title: "Assets Monitored", value: "156", change: null, trend: "up", icon: Server, color: "text-primary", bgColor: "bg-primary/10" },
-  { title: "Active Detections", value: "24", change: null, trend: "up", icon: Radar, color: "text-chart-1", bgColor: "bg-chart-1/10" },
-];
-
-const detectionStats = {
-  total: 28,
-  enabled: 24,
-  triggered: 12,
-  techniques: 15,
-};
-
-const demoMitreDistribution = [
-  { technique: "T1059", count: 5, name: "Command & Scripting" },
-  { technique: "T1110", count: 4, name: "Brute Force" },
-  { technique: "T1021", count: 3, name: "Remote Services" },
-  { technique: "T1548", count: 3, name: "Privilege Escalation" },
-  { technique: "T1071", count: 2, name: "Application Layer Protocol" },
-];
-
-const demoVulnBySeverity = [
-  { name: "Critical", value: 5, color: "hsl(var(--destructive))" },
-  { name: "High", value: 12, color: "hsl(25, 95%, 53%)" },
-  { name: "Medium", value: 18, color: "hsl(38, 92%, 50%)" },
-  { name: "Low", value: 12, color: "hsl(var(--success))" },
-];
-
-const demoVulnTrend = [
-  { date: "Dec 1", new: 8, resolved: 5 },
-  { date: "Dec 5", new: 12, resolved: 10 },
-  { date: "Dec 9", new: 6, resolved: 8 },
-  { date: "Dec 13", new: 15, resolved: 12 },
-  { date: "Dec 17", new: 9, resolved: 14 },
-  { date: "Dec 19", new: 7, resolved: 11 },
-];
-
-const demoRecentAlerts = [
-  {
-    id: "1",
-    title: "Critical RCE vulnerability detected",
-    severity: "critical",
-    asset: "dc01.corp.local",
-    time: "15 min ago",
-  },
-  {
-    id: "2",
-    title: "Unusual login pattern detected",
-    severity: "high",
-    asset: "vpn-gateway-01",
-    time: "1 hour ago",
-  },
-  {
-    id: "3",
-    title: "SSL certificate expiring soon",
-    severity: "medium",
-    asset: "webserver-prod-02",
-    time: "3 hours ago",
-  },
-  {
-    id: "4",
-    title: "Firewall rule audit required",
-    severity: "low",
-    asset: "fw-edge-01",
-    time: "5 hours ago",
-  },
-];
-
-const demoUpcomingTasks = [
-  { id: "1", title: "Review Q4 incident reports", due: "Today", priority: "high" },
-  { id: "2", title: "Update VPN runbook", due: "Tomorrow", priority: "medium" },
-  { id: "3", title: "Patch Windows servers", due: "Dec 22", priority: "critical" },
-  { id: "4", title: "Security awareness training", due: "Dec 25", priority: "low" },
-];
-
 const getSeverityColor = (severity: string) => {
   switch (severity) {
     case "critical":
@@ -302,31 +226,26 @@ export default function Dashboard() {
   }, [activeWorkspace?.id]);
 
   // Build display values using fetched state with fallbacks to static mocks
-  const kpis = [
-    {
-      ...kpiData[0],
-      value: openVulns !== null ? String(openVulns) : kpiData[0].value,
-    },
-    {
-      ...kpiData[1],
-      value: activeIncidents !== null ? String(activeIncidents) : kpiData[1].value,
-    },
-    {
-      ...kpiData[2],
-      value: assetsCount !== null ? String(assetsCount) : kpiData[2].value,
-    },
-    {
-      ...kpiData[3],
-      value: activeDetectionsCount !== null ? String(activeDetectionsCount) : kpiData[3].value,
-    },
+  const kpiLabels = [
+    { title: "Open Vulnerabilities", icon: ShieldAlert, color: "text-destructive", bgColor: "bg-destructive/10", trend: "down" },
+    { title: "Active Incidents", icon: AlertTriangle, color: "text-warning", bgColor: "bg-warning/10", trend: "up" },
+    { title: "Assets Monitored", icon: Server, color: "text-primary", bgColor: "bg-primary/10", trend: "up" },
+    { title: "Active Detections", icon: Radar, color: "text-chart-1", bgColor: "bg-chart-1/10", trend: "up" },
   ];
 
-  const detectionStatsDisplay = detectionStatsState ?? detectionStats;
-  const sourceMitreDistribution = mitreDistState === null ? demoMitreDistribution : mitreDistState;
-  const sourceRecentAlerts = recentAlertsState === null ? demoRecentAlerts : recentAlertsState;
-  const sourceVulnTrend = vulnTrendState === null ? demoVulnTrend : vulnTrendState;
-  const sourceVulnBySeverity = vulnBySeverityState === null ? demoVulnBySeverity : vulnBySeverityState;
-  const sourceUpcomingTasks = upcomingTasksState === null ? demoUpcomingTasks : upcomingTasksState;
+  const kpis = [
+    { ...kpiLabels[0], value: openVulns === null ? "—" : String(openVulns ?? "—") },
+    { ...kpiLabels[1], value: activeIncidents === null ? "—" : String(activeIncidents ?? "—") },
+    { ...kpiLabels[2], value: assetsCount === null ? "—" : String(assetsCount ?? "—") },
+    { ...kpiLabels[3], value: activeDetectionsCount === null ? "—" : String(activeDetectionsCount ?? "—") },
+  ];
+
+  const detectionStatsDisplay = detectionStatsState ?? { total: 0, enabled: 0, triggered: 0, techniques: 0 };
+  const sourceMitreDistribution = mitreDistState === null ? [] : mitreDistState;
+  const sourceRecentAlerts = recentAlertsState === null ? [] : recentAlertsState;
+  const sourceVulnTrend = vulnTrendState === null ? [] : vulnTrendState;
+  const sourceVulnBySeverity = vulnBySeverityState === null ? [] : vulnBySeverityState;
+  const sourceUpcomingTasks = upcomingTasksState === null ? [] : upcomingTasksState;
 
   return (
     <div className="space-y-6">

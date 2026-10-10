@@ -35,58 +35,6 @@ import { useWorkspace } from "@/hooks/useWorkspace";
 import { toast } from "sonner";
 import IncidentFormModal from "@/components/modals/IncidentFormModal";
 
-const demoIncidents = [
-  {
-    id: "1",
-    incident_number: "INC-2024-0042",
-    title: "Suspicious Login Attempts from Unknown Location",
-    severity: "high",
-    status: "investigating",
-    affected_assets: 3,
-    opened_at: new Date(Date.now() - 1000 * 60 * 60 * 4),
-    assigned_to: "Security Team",
-  },
-  {
-    id: "2",
-    incident_number: "INC-2024-0041",
-    title: "Potential Data Exfiltration via DNS Tunneling",
-    severity: "critical",
-    status: "contained",
-    affected_assets: 1,
-    opened_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 2),
-    assigned_to: "IR Team",
-  },
-  {
-    id: "3",
-    incident_number: "INC-2024-0040",
-    title: "Phishing Campaign Targeting Finance Department",
-    severity: "medium",
-    status: "eradicated",
-    affected_assets: 12,
-    opened_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 5),
-    assigned_to: "Security Team",
-  },
-  {
-    id: "4",
-    incident_number: "INC-2024-0039",
-    title: "Unauthorized Software Installation",
-    severity: "low",
-    status: "closed",
-    affected_assets: 1,
-    opened_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 10),
-    assigned_to: "IT Support",
-  },
-  {
-    id: "5",
-    incident_number: "INC-2024-0038",
-    title: "Ransomware Attempt Blocked by EDR",
-    severity: "critical",
-    status: "recovered",
-    affected_assets: 5,
-    opened_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 15),
-    assigned_to: "IR Team",
-  },
-];
 
 const getSeverityBadge = (severity: string) => {
   const styles: Record<string, string> = {
@@ -166,7 +114,7 @@ export default function Incidents() {
     fetchIncidents();
   }, [activeWorkspace?.id]);
 
-  const sourceIncidents = incidents === null ? demoIncidents : incidents || [];
+  const sourceIncidents = incidents === null ? [] : incidents || [];
 
   const filteredIncidents = sourceIncidents.filter((incident) => {
     const matchesSearch =

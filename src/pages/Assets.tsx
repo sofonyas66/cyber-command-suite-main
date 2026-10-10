@@ -49,98 +49,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { useWorkspace } from "@/hooks/useWorkspace";
 
 // Demo data
-const demoAssets = [
-  {
-    id: "1",
-    hostname: "dc01.corp.local",
-    ip_address: "10.0.1.10",
-    mac_address: "00:1A:2B:3C:4D:5E",
-    os: "Windows Server 2022",
-    asset_type: "server",
-    owner: "IT Infrastructure",
-    location: "DC1 - Rack A3",
-    environment: "production",
-    criticality: "critical",
-    tags: ["domain-controller", "active-directory"],
-    last_seen: new Date(),
-    notes: "Primary domain controller",
-  },
-  {
-    id: "2",
-    hostname: "webserver-prod-01",
-    ip_address: "10.0.2.20",
-    mac_address: "00:1A:2B:3C:4D:5F",
-    os: "Ubuntu 22.04 LTS",
-    asset_type: "server",
-    owner: "DevOps",
-    location: "DC1 - Rack B2",
-    environment: "production",
-    criticality: "high",
-    tags: ["web", "nginx", "frontend"],
-    last_seen: new Date(),
-    notes: "Primary web server",
-  },
-  {
-    id: "3",
-    hostname: "fw-edge-01",
-    ip_address: "10.0.0.1",
-    mac_address: "00:1A:2B:3C:4D:60",
-    os: "Palo Alto PAN-OS 11.0",
-    asset_type: "firewall",
-    owner: "Network Security",
-    location: "DC1 - Rack A1",
-    environment: "production",
-    criticality: "critical",
-    tags: ["firewall", "perimeter", "ngfw"],
-    last_seen: new Date(),
-    notes: "Edge firewall",
-  },
-  {
-    id: "4",
-    hostname: "db-prod-mysql-01",
-    ip_address: "10.0.3.30",
-    mac_address: "00:1A:2B:3C:4D:61",
-    os: "Ubuntu 22.04 LTS",
-    asset_type: "server",
-    owner: "DBA Team",
-    location: "DC1 - Rack C1",
-    environment: "production",
-    criticality: "critical",
-    tags: ["database", "mysql", "primary"],
-    last_seen: new Date(),
-    notes: "Primary MySQL database",
-  },
-  {
-    id: "5",
-    hostname: "dev-workstation-001",
-    ip_address: "10.10.1.50",
-    mac_address: "00:1A:2B:3C:4D:62",
-    os: "macOS Sonoma 14.2",
-    asset_type: "workstation",
-    owner: "John Smith",
-    location: "Office - Floor 3",
-    environment: "development",
-    criticality: "low",
-    tags: ["developer", "macos"],
-    last_seen: new Date(Date.now() - 1000 * 60 * 60 * 2),
-    notes: "Developer workstation",
-  },
-  {
-    id: "6",
-    hostname: "vpn-gateway-01",
-    ip_address: "10.0.0.5",
-    mac_address: "00:1A:2B:3C:4D:63",
-    os: "OpenVPN Access Server",
-    asset_type: "appliance",
-    owner: "Network Security",
-    location: "DC1 - Rack A2",
-    environment: "production",
-    criticality: "high",
-    tags: ["vpn", "remote-access"],
-    last_seen: new Date(),
-    notes: "Corporate VPN gateway",
-  },
-];
 
 const getAssetIcon = (type: string) => {
   switch (type) {
@@ -191,7 +99,7 @@ export default function Assets() {
   const [searchQuery, setSearchQuery] = useState("");
   const [environmentFilter, setEnvironmentFilter] = useState<string>("all");
   const [criticalityFilter, setCriticalityFilter] = useState<string>("all");
-  const [selectedAsset, setSelectedAsset] = useState<typeof demoAssets[0] | null>(null);
+  const [selectedAsset, setSelectedAsset] = useState<any | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [editingAsset, setEditingAsset] = useState<any | null>(null);
@@ -224,10 +132,10 @@ export default function Assets() {
     fetchAssets();
   }, [activeWorkspace?.id]);
 
-  // Use demoAssets only before the first fetch (assets === null).
+  // Use [] only before the first fetch (assets === null).
   // If `assets` is an empty array after a fetch, show the empty state instead
   // rather than falling back to demo data.
-  const sourceAssets = assets === null ? demoAssets : assets;
+  const sourceAssets = assets === null ? [] : assets;
 
   const filteredAssets = sourceAssets.filter((asset) => {
     const matchesSearch =

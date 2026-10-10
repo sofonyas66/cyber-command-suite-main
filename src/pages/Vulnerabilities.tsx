@@ -37,80 +37,6 @@ import {
 import { differenceInDays } from "date-fns";
 import { VulnImportWizard } from "@/components/modals/VulnImportWizard";
 
-const demoVulnerabilities = [
-  {
-    id: "1",
-    title: "Remote Code Execution in Log4j",
-    cve_id: "CVE-2021-44228",
-    cvss_score: 10.0,
-    severity: "critical",
-    status: "in_progress",
-    affected_assets: 5,
-    first_detected: new Date(Date.now() - 1000 * 60 * 60 * 24 * 3),
-    sla_due_date: new Date(Date.now() + 1000 * 60 * 60 * 24 * 2),
-    source: "Nessus",
-  },
-  {
-    id: "2",
-    title: "SQL Injection in Login Form",
-    cve_id: null,
-    cvss_score: 9.8,
-    severity: "critical",
-    status: "new",
-    affected_assets: 2,
-    first_detected: new Date(Date.now() - 1000 * 60 * 60 * 24 * 1),
-    sla_due_date: new Date(Date.now() + 1000 * 60 * 60 * 24 * 3),
-    source: "Pentest",
-  },
-  {
-    id: "3",
-    title: "OpenSSL Heartbleed Vulnerability",
-    cve_id: "CVE-2014-0160",
-    cvss_score: 7.5,
-    severity: "high",
-    status: "mitigated",
-    affected_assets: 0,
-    first_detected: new Date(Date.now() - 1000 * 60 * 60 * 24 * 30),
-    sla_due_date: null,
-    source: "Qualys",
-  },
-  {
-    id: "4",
-    title: "Missing Security Headers",
-    cve_id: null,
-    cvss_score: 5.3,
-    severity: "medium",
-    status: "triage",
-    affected_assets: 12,
-    first_detected: new Date(Date.now() - 1000 * 60 * 60 * 24 * 7),
-    sla_due_date: new Date(Date.now() + 1000 * 60 * 60 * 24 * 14),
-    source: "Burp Suite",
-  },
-  {
-    id: "5",
-    title: "Outdated jQuery Version",
-    cve_id: "CVE-2020-11023",
-    cvss_score: 6.1,
-    severity: "medium",
-    status: "accepted",
-    affected_assets: 8,
-    first_detected: new Date(Date.now() - 1000 * 60 * 60 * 24 * 60),
-    sla_due_date: null,
-    source: "Dependency Scan",
-  },
-  {
-    id: "6",
-    title: "TLS 1.0 Still Enabled",
-    cve_id: null,
-    cvss_score: 3.7,
-    severity: "low",
-    status: "new",
-    affected_assets: 3,
-    first_detected: new Date(Date.now() - 1000 * 60 * 60 * 24 * 2),
-    sla_due_date: new Date(Date.now() + 1000 * 60 * 60 * 24 * 30),
-    source: "SSL Labs",
-  },
-];
 
 const getSeverityBadge = (severity: string) => {
   const styles: Record<string, string> = {
@@ -185,7 +111,7 @@ export default function Vulnerabilities() {
     fetchVulns();
   }, [searchParams, activeWorkspace?.id]);
 
-  const sourceVulns = vulnerabilities === null ? demoVulnerabilities : vulnerabilities || [];
+  const sourceVulns = vulnerabilities === null ? [] : vulnerabilities || [];
 
   const filteredVulns = sourceVulns.filter((vuln) => {
     const matchesSearch =
