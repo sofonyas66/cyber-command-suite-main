@@ -34,6 +34,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useWorkspace } from "@/hooks/useWorkspace";
 import { toast } from "sonner";
 import IncidentFormModal from "@/components/modals/IncidentFormModal";
+import IncidentDetailPanel from "@/components/panels/IncidentDetailPanel";
 
 
 const getSeverityBadge = (severity: string) => {
@@ -67,6 +68,7 @@ export default function Incidents() {
 
   const [incidents, setIncidents] = useState<any[] | null>(null);
   const [incidentModalOpen, setIncidentModalOpen] = useState(false);
+  const [selectedIncident, setSelectedIncident] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -288,7 +290,7 @@ export default function Incidents() {
                     const StatusIcon = statusConfig.icon;
                     
                     return (
-                      <TableRow key={incident.id} className="cursor-pointer hover:bg-muted/50">
+                      <TableRow key={incident.id} className="cursor-pointer hover:bg-muted/50" onClick={() => setSelectedIncident(incident)}>
                         <TableCell>
                           <div>
                             <p className="font-mono text-xs text-muted-foreground">{incident.incident_number}</p>
@@ -323,6 +325,7 @@ export default function Incidents() {
           )}
         </CardContent>
       </Card>
+      <IncidentDetailPanel incident={selectedIncident} onClose={() => setSelectedIncident(null)} onUpdate={fetchIncidents} />
     </div>
   );
 }

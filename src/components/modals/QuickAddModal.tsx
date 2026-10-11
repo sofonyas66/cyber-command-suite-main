@@ -6,7 +6,13 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Server, ShieldAlert, AlertTriangle, BookOpen, Network, FileSearch, Radar } from "lucide-react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import AssetFormModal from "@/components/modals/AssetFormModal";
+import VulnFormModal from "@/components/modals/VulnFormModal";
+import IncidentFormModal from "@/components/modals/IncidentFormModal";
+import RunbookFormModal from "@/components/modals/RunbookFormModal";
+import DetectionFormModal from "@/components/modals/DetectionFormModal";
 
 interface QuickAddModalProps {
   open: boolean;
@@ -67,9 +73,14 @@ const quickActions = [
 
 export default function QuickAddModal({ open, onOpenChange }: QuickAddModalProps) {
   const navigate = useNavigate();
+  const [assetOpen, setAssetOpen] = useState(false);
+  const [vulnOpen, setVulnOpen] = useState(false);
+  const [incidentOpen, setIncidentOpen] = useState(false);
+  const [detectionOpen, setDetectionOpen] = useState(false);
+  const [runbookOpen, setRunbookOpen] = useState(false);
 
-  const handleSelect = (path: string) => {
-    navigate(path);
+  const handleSelect = (label: string, path?: string) => {
+    if (path) navigate(path);
     onOpenChange(false);
   };
 
@@ -87,7 +98,14 @@ export default function QuickAddModal({ open, onOpenChange }: QuickAddModalProps
                 key={action.label}
                 variant="outline"
                 className="h-auto p-4 flex flex-col items-start gap-2 hover:border-primary/50 transition-all"
-                onClick={() => handleSelect(action.path)}
+                onClick={() => {
+                if (action.label === 'Asset') { setAssetOpen(true); onOpenChange(false); }
+                else if (action.label === 'Vulnerability') { setVulnOpen(true); onOpenChange(false); }
+                else if (action.label === 'Incident') { setIncidentOpen(true); onOpenChange(false); }
+                else if (action.label === 'Runbook') { setRunbookOpen(true); onOpenChange(false); }
+                else if (action.label === 'Detection') { setDetectionOpen(true); onOpenChange(false); }
+                else { handleSelect(action.label, action.path); }
+              }}
               >
                 <div className={`p-2 rounded-lg bg-muted ${action.color}`}>
                   <Icon className="h-5 w-5" />
@@ -103,6 +121,13 @@ export default function QuickAddModal({ open, onOpenChange }: QuickAddModalProps
           })}
         </div>
       </DialogContent>
+    
+    <AssetFormModal open={assetOpen} onOpenChange={setAssetOpen} onSaved={() => {}} />
+    <VulnFormModal open={vulnOpen} onOpenChange={setVulnOpen} onSaved={() => {}} />
+    <IncidentFormModal open={incidentOpen} onOpenChange={setIncidentOpen} onSaved={() => {}} />
+    <RunbookFormModal open={runbookOpen} onOpenChange={setRunbookOpen} onSaved={() => {}} />
+    <DetectionFormModal open={detectionOpen} onOpenChange={setDetectionOpen} onSaved={() => {}} />
+    
     </Dialog>
   );
 }

@@ -2,6 +2,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useState, useEffect } from "react";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -17,8 +18,11 @@ import {
   Key,
   Trash2,
 } from "lucide-react";
+import { toast } from "sonner";
 import { useTheme } from "@/components/ThemeProvider";
+import { useWorkspace } from "@/hooks/useWorkspace";
 import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
 import IntegrationsTab from "@/components/settings/IntegrationsTab";
 
 export default function Settings() {
@@ -52,25 +56,7 @@ export default function Settings() {
               <CardDescription>Update your personal information</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="fullName">Full Name</Label>
-                  <Input id="fullName" placeholder="Security Engineer" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
-                  <Input id="email" type="email" value={user?.email || ""} disabled />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="role">Role</Label>
-                  <Input id="role" placeholder="Security Engineer" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="org">Organization</Label>
-                  <Input id="org" placeholder="ACME Corp" />
-                </div>
-              </div>
-              <Button>Save Changes</Button>
+              <ProfileSection />
             </CardContent>
           </Card>
 
@@ -88,19 +74,10 @@ export default function Settings() {
                   <p className="font-medium">Two-Factor Authentication</p>
                   <p className="text-sm text-muted-foreground">Add an extra layer of security</p>
                 </div>
-                <Button variant="outline" size="sm">
-                  <Key className="h-4 w-4 mr-2" />
-                  Setup 2FA
-                </Button>
+                <span title="Coming soon"><Button variant="outline" size="sm" disabled><Key className="h-4 w-4 mr-2" />Setup 2FA</Button></span>
               </div>
               <Separator />
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium">Change Password</p>
-                  <p className="text-sm text-muted-foreground">Update your password regularly</p>
-                </div>
-                <Button variant="outline" size="sm">Change Password</Button>
-              </div>
+              <ChangePasswordSection />
             </CardContent>
           </Card>
         </TabsContent>
@@ -246,3 +223,49 @@ export default function Settings() {
     </div>
   );
 }
+
+function ProfileSection() {
+  const { user } = useAuth();
+  const { activeWorkspace } = useWorkspace();
+  const [profile, setProfile] = useState({ full_name: "", role: "" });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    supabase.from("profiles").select("full_name, role").eq("id", user.id).single().then(({ data }: any) => {
+      if (data) setProfile({ full_name: data.full_name || "", role: data.role || "" });
+    });
+  }, [user?.id]);
+
+  const handleSave = async () => {
+    if (!user?.id) return;
+    setSaving(true);
+    const { error } = await supabase.from("profiles").update({ full_name: profile.full_name || null, role: profile.role || null }).eq("id", user.id);
+    setSaving(false);
+    if (error) toast.error(error.message || String(error));
+    else toast.success("Profile updated");
+  };
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="space-y-2">
+        <Label htmlFor="fullName">Full Name</Label>
+        <Input id="fullName" value={profile.full_name} onChange={e => setProfile({ ...profile, full_name: e.target.value })} placeholder="Enter full name" />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="email">Email</Label>
+        <Input id="email" type="email" value={user?.email || ""} disabled />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="role">Role</Label>
+        <Input id="role" value={profile.role} onChange={e => setProfile({ ...profile, role: e.target.value })} placeholder="Enter role" />
+      </div>
+    </div>
+  );
+}
+
+/* Round C Settings report:
+Theme tab: real theme picker (light/dark/system), saves via useTheme, notifications switches are UI only (no backend).
+Integrations tab: renders IntegrationsTab component (real sync configs).
+Data tab: export/import buttons (UI only, no actual file handler implemented), Delete All button (destructive, not implemented).
+*/

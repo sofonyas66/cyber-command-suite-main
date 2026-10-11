@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Dialog,
@@ -7,6 +7,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Search, Server, ShieldAlert, AlertTriangle, BookOpen, FileSearch } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/integrations/supabase/client";
+import { useWorkspace } from "@/hooks/useWorkspace";
 
 interface GlobalSearchModalProps {
   open: boolean;
@@ -84,31 +86,13 @@ export default function GlobalSearchModal({ open, onOpenChange }: GlobalSearchMo
         {/* Results */}
         <div className="p-4 max-h-[400px] overflow-y-auto">
           {query ? (
-            <div className="text-center py-8 text-muted-foreground">
-              <Search className="h-8 w-8 mx-auto mb-2 opacity-50" />
-              <p>Search for "{query}"</p>
-              <p className="text-sm">Press Enter to search</p>
-            </div>
+            <RealSearchResults query={query} category={category} />
           ) : (
             <div>
               <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
                 Recent Searches
               </h4>
-              <div className="space-y-1">
-                {recentSearches.map((item, i) => (
-                  <button
-                    key={i}
-                    onClick={() => handleSelect(item.path)}
-                    className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-muted transition-colors text-left"
-                  >
-                    {item.type === "asset" && <Server className="h-4 w-4 text-primary" />}
-                    {item.type === "vulnerability" && <ShieldAlert className="h-4 w-4 text-destructive" />}
-                    {item.type === "runbook" && <BookOpen className="h-4 w-4 text-success" />}
-                    <span className="text-sm">{item.name}</span>
-                    <span className="ml-auto text-xs text-muted-foreground capitalize">{item.type}</span>
-                  </button>
-                ))}
-              </div>
+              <RecentSearches onSelect={handleSelect} />
             </div>
           )}
         </div>
@@ -130,5 +114,102 @@ export default function GlobalSearchModal({ open, onOpenChange }: GlobalSearchMo
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function sanitizeQuery(q: string): string {
+  return q.replace(/[%,_\\(),]/g, "").trim();
+}
+
+function RealSearchResults({ query, category }: { query: string; category: SearchCategory }) {
+  const { activeWorkspace } = useWorkspace();
+  const navigate = useNavigate();
+  const [results, setResults] = useState<Record<string, any[]>>({ assets: [], vulnerabilities: [], incidents: [], runbooks: [], logs: [] });
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const clean = sanitizeQuery(query);
+    if (clean.length < 2) { setResults({ assets: [], vulnerabilities: [], incidents: [], runbooks: [], logs: [] }); return; }
+    setLoading(true);
+    const timer = setTimeout(async () => {
+      try {
+        const workspaceFilter = activeWorkspace?.id ? `workspace_id.eq.${activeWorkspace.id}` : "";
+        const likePattern = `%${clean}%`;
+        const fetchTable = async (table: string, fields: string) => {
+          let queryBuilder = supabase.from(table).select(fields);
+          if (workspaceFilter) queryBuilder = queryBuilder.eq("workspace_id", activeWorkspace!.id as any);
+          // Search via or on text fields - simplified approach
+          const { data } = await queryBuilder.or(`title.ilike.${likePattern},hostname.ilike.${likePattern},cve_id.ilike.${likePattern},incident_number.ilike.${likePattern}`).limit(5);
+          return data || [];
+        };
+        const [assets, vulnerabilities, incidents, runbooks, logs] = await Promise.all([
+          fetchTable("assets", "id, hostname, owner"),
+          fetchTable("vulnerabilities", "id, title, cve_id"),
+          fetchTable("incidents", "id, title, incident_number"),
+          fetchTable("runbooks", "id, title"),
+          fetchTable("log_snippets", "id, title"),
+        ]);
+        setResults({ assets, vulnerabilities, incidents, runbooks, logs: logs || [] });
+      } catch (e) { console.error(e); }
+      finally { setLoading(false); }
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [query, category, activeWorkspace?.id]);
+
+  const types: SearchCategory[] = ["assets", "vulnerabilities", "incidents", "runbooks", "logs"];
+  if (category !== "all") types.splice(0, types.length);
+  if (category !== "all") types.push(category);
+
+  const handleSelect = (path: string, id?: string) => {
+    navigate(path + (id ? `?v=${id}` : ""));
+  };
+
+  if (loading) return <p className="text-sm text-muted-foreground">Searching...</p>;
+  const filteredResults = Object.entries(results).filter(([k]) => category === "all" || k === category);
+  if (filteredResults.every(([_, v]) => v.length === 0)) return <p className="text-sm text-muted-foreground">No results found</p>;
+
+  return (
+    <div className="space-y-4">
+      {filteredResults.map(([type, items]) => {
+        if (items.length === 0) return null;
+        const icons: Record<string, any> = { assets: Server, vulnerabilities: ShieldAlert, incidents: AlertTriangle, runbooks: BookOpen, logs: FileSearch };
+        const Icon = icons[type];
+        const paths: Record<string, string> = { assets: "/assets", vulnerabilities: "/vulnerabilities", incidents: "/incidents", runbooks: "/runbooks", logs: "/logs" };
+        return (
+          <div key={type}>
+            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1">
+              <Icon className="h-3 w-3" /> {type}
+            </h4>
+            <div className="space-y-1">
+              {items.map((item: any) => (
+                <button key={item.id} onClick={() => handleSelect(paths[type], item.id)} className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-muted transition-colors text-left">
+                  <span className="text-sm truncate">{item.hostname || item.title || item.incident_number || item.name || item.id}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function RecentSearches({ onSelect }: { onSelect: (label: string, path?: string) => void }) {
+  const [recents, setRecents] = useState<{ query: string; path: string }[]>([]);
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("searchRecents");
+      if (stored) setRecents(JSON.parse(stored));
+    } catch { setRecents([]); }
+  }, []);
+  if (!recents.length) return <p className="text-xs text-muted-foreground">No recent searches</p>;
+  return (
+    <div className="space-y-1">
+      {recents.map((item, i) => (
+        <button key={i} onClick={() => onSelect(item.query, item.path)} className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-muted transition-colors text-left">
+          <span className="text-sm">{item.query}</span>
+        </button>
+      ))}
+    </div>
   );
 }
