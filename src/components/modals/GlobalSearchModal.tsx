@@ -118,13 +118,14 @@ export default function GlobalSearchModal({ open, onOpenChange }: GlobalSearchMo
 }
 
 function sanitizeQuery(q: string): string {
-  return q.replace(/[%,_\\(),]/g, "").trim();
+  return q.replace(/[%,\\(),]/g, "").trim(); // strip %, backslash, commas, parens; keep dots/dashes/underscores
 }
 
 function RealSearchResults({ query, category }: { query: string; category: SearchCategory }) {
   const { activeWorkspace } = useWorkspace();
   const navigate = useNavigate();
-  const [results, setResults] = useState<Record<string, any[]>>({ assets: [], vulnerabilities: [], incidents: [], runbooks: [], logs: [] });
+  const [results, setResults] = useState<Record<string, any>>({ assets: [], vulnerabilities: [], incidents: [], runbooks: [], logs: [] });
+  const [searchErrors, setSearchErrors] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -135,22 +136,37 @@ function RealSearchResults({ query, category }: { query: string; category: Searc
       try {
         const workspaceFilter = activeWorkspace?.id ? `workspace_id.eq.${activeWorkspace.id}` : "";
         const likePattern = `%${clean}%`;
-        const fetchTable = async (table: string, fields: string) => {
+        const fetchTable = async (table: string, fields: string, orFilter: string) => {
           let queryBuilder = (supabase.from(table as any) as any).select(fields);
           if (workspaceFilter) queryBuilder = queryBuilder.eq("workspace_id", activeWorkspace!.id as any);
-          const { data } = await (queryBuilder.or(`title.ilike.${likePattern},hostname.ilike.${likePattern},cve_id.ilike.${likePattern},incident_number.ilike.${likePattern}`) as any).limit(5);
+          const { data, error } = await (queryBuilder.or(orFilter) as any).limit(5);
+          if (error) throw error;
           return data || [];
         };
-        const [assets, vulnerabilities, incidents, runbooks, logs] = await Promise.all([
-          fetchTable("assets", "id, hostname, owner"),
-          fetchTable("vulnerabilities", "id, title, cve_id"),
-          fetchTable("incidents", "id, title, incident_number"),
-          fetchTable("runbooks", "id, title"),
-          fetchTable("log_snippets", "id, title"),
-        ]);
-        setResults({ assets, vulnerabilities, incidents, runbooks, logs: logs || [] });
-      } catch (e) { console.error(e); }
-      finally { setLoading(false); }
+        const tableConfigs = [
+          { key: "assets", table: "assets", fields: "id, hostname, owner", orFilter: `hostname.ilike.${likePattern},owner.ilike.${likePattern}` },
+          { key: "vulnerabilities", table: "vulnerabilities", fields: "id, title, cve_id", orFilter: `title.ilike.${likePattern},cve_id.ilike.${likePattern}` },
+          { key: "incidents", table: "incidents", fields: "id, title, incident_number", orFilter: `title.ilike.${likePattern},incident_number.ilike.${likePattern}` },
+          { key: "runbooks", table: "runbooks", fields: "id, title", orFilter: `title.ilike.${likePattern}` },
+          { key: "logs", table: "log_snippets", fields: "id, title", orFilter: `title.ilike.${likePattern}` },
+        ];
+        const settled = await Promise.allSettled(tableConfigs.map(cfg => fetchTable(cfg.table, cfg.fields, cfg.orFilter)));
+        const resultsObj: any = {};
+        const searchErrors: string[] = [];
+        tableConfigs.forEach((cfg, i) => {
+          const res = settled[i];
+          if (res.status === "fulfilled") {
+            resultsObj[cfg.key] = res.value || [];
+          } else {
+            resultsObj[cfg.key] = [];
+            const err = res.reason as any;
+            searchErrors.push(`${cfg.key}: ${err?.message || String(err)}`);
+            console.error("Search failed for table", cfg.key, "code:", err?.code, "details:", err?.details, "hint:", err?.hint);
+          }
+        });
+        setResults(resultsObj);
+        setSearchErrors(searchErrors);
+      } catch (e) { console.error("Search query error", e); } finally { setLoading(false); }
     }, 250);
     return () => clearTimeout(timer);
   }, [query, category, activeWorkspace?.id]);
@@ -165,7 +181,8 @@ function RealSearchResults({ query, category }: { query: string; category: Searc
 
   if (loading) return <p className="text-sm text-muted-foreground">Searching...</p>;
   const filteredResults = Object.entries(results).filter(([k]) => category === "all" || k === category);
-  if (filteredResults.every(([_, v]) => v.length === 0)) return <p className="text-sm text-muted-foreground">No results found</p>;
+  if (searchErrors.length > 0) return <p className="text-sm text-destructive">Search failed: {searchErrors.join(", ")}</p>;
+  if (filteredResults.every(([_, v]) => (v as any[]).length === 0)) return <p className="text-sm text-muted-foreground">No results found</p>;
 
   return (
     <div className="space-y-4">

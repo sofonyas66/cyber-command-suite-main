@@ -228,12 +228,13 @@ function ProfileSection() {
   const { user } = useAuth();
   const { activeWorkspace } = useWorkspace();
   const [profile, setProfile] = useState({ full_name: "", role: "" });
+  const [savedProfile, setSavedProfile] = useState({ full_name: "", role: "" });
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!user?.id) return;
     supabase.from("profiles").select("full_name, role").eq("id", user.id).single().then(({ data }: any) => {
-      if (data) setProfile({ full_name: data.full_name || "", role: data.role || "" });
+      if (data) { const loaded = { full_name: data.full_name || "", role: data.role || "" }; setProfile(loaded); setSavedProfile(loaded); }
     });
   }, [user?.id]);
 
@@ -243,7 +244,7 @@ function ProfileSection() {
     const { error } = await supabase.from("profiles").update({ full_name: profile.full_name || null, role: profile.role || null }).eq("id", user.id);
     setSaving(false);
     if (error) toast.error(error.message || String(error));
-    else toast.success("Profile updated");
+    else { toast.success("Profile updated"); setSavedProfile({ full_name: profile.full_name || "", role: profile.role || "" }); }
   };
 
   return (
@@ -259,6 +260,11 @@ function ProfileSection() {
       <div className="space-y-2">
         <Label htmlFor="role">Role</Label>
         <Input id="role" value={profile.role} onChange={e => setProfile({ ...profile, role: e.target.value })} placeholder="Enter role" />
+      </div>
+      <div className="md:col-span-2 mt-2">
+        <Button onClick={handleSave} disabled={saving || (profile.full_name === savedProfile.full_name && profile.role === savedProfile.role)}>
+          {saving ? "Saving..." : "Save Changes"}
+        </Button>
       </div>
     </div>
   );

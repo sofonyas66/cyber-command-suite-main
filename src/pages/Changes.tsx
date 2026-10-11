@@ -52,6 +52,7 @@ import { format, formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useWorkspace } from "@/hooks/useWorkspace";
+import ChangeFormModal from "@/components/modals/ChangeFormModal";
 
 type ChangeType = "Firewall" | "ACL" | "Routing" | "VPN" | "Switch" | "DNS";
 type ChangeStatus = "Draft" | "Review" | "Approved" | "Implemented" | "Verified" | "Closed";
@@ -133,6 +134,7 @@ export default function Changes() {
   const [typeFilter, setTypeFilter] = useState("all");
   const [selectedChange, setSelectedChange] = useState<Change | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [changeModalOpen, setChangeModalOpen] = useState(false);
   const { activeWorkspace } = useWorkspace();
 
   const [changes, setChanges] = useState<any[] | null>(null);
@@ -193,7 +195,7 @@ export default function Changes() {
     <h1 className="text-2xl font-bold">Change Control</h1>
     <p className="text-muted-foreground">Network and security change management workflow</p>
     </div>
-    <Button size="sm">
+    <Button size="sm" onClick={() => setChangeModalOpen(true)}>
     <Plus className="h-4 w-4 mr-2" />
     New Change Request
     </Button>
@@ -346,7 +348,7 @@ export default function Changes() {
         <TableCell>
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Calendar className="h-3 w-3" />
-          {format(new Date(change.planned_start), "MMM d, yyyy")}
+          {change.planned_start ? format(new Date(change.planned_start), "MMM d, yyyy") : "Not scheduled"}
           </div>
         </TableCell>
         <TableCell>
@@ -455,11 +457,11 @@ export default function Changes() {
       <CardContent className="space-y-2">
       <div>
       <p className="text-xs text-muted-foreground">Planned Start</p>
-      <p className="text-sm">{format(new Date(selectedChange.planned_start), "PPpp")}</p>
+      <p className="text-sm">{selectedChange.planned_start ? format(new Date(selectedChange.planned_start), "PPpp") : "Not scheduled"}</p>
       </div>
       <div>
       <p className="text-xs text-muted-foreground">Planned End</p>
-      <p className="text-sm">{format(new Date(selectedChange.planned_end), "PPpp")}</p>
+      <p className="text-sm">{selectedChange.planned_end ? format(new Date(selectedChange.planned_end), "PPpp") : "Not scheduled"}</p>
       </div>
       {selectedChange.approver && (
         <div>
@@ -481,7 +483,7 @@ export default function Changes() {
       <div>
       <p className="text-xs text-muted-foreground">Impacted Asset IDs</p>
       <div className="flex flex-wrap gap-1 mt-1">
-      {selectedChange.impacted_asset_ids?.map((asset) => (
+        {(selectedChange.impacted_asset_ids || []).length === 0 ? <span className="text-xs text-muted-foreground">None</span> : selectedChange.impacted_asset_ids?.map((asset) => (
         <Badge key={asset} variant="secondary" className="text-xs">
         {asset.slice(0, 8)}...
         </Badge>
@@ -491,11 +493,7 @@ export default function Changes() {
       <div>
       <p className="text-xs text-muted-foreground">Impacted Network IDs</p>
       <div className="flex flex-wrap gap-1 mt-1">
-      {selectedChange.impacted_network_ids?.map((network) => (
-        <Badge key={network} variant="outline" className="text-xs">
-        {network.slice(0, 8)}...
-        </Badge>
-      ))}
+      {(selectedChange.impacted_network_ids || []).length === 0 ? <span className="text-xs text-muted-foreground italic">None</span> : selectedChange.impacted_network_ids.map((network) => (<Badge key={network} variant="outline" className="text-xs">{network.slice(0, 8)}...</Badge>))}
       </div>
       </div>
       </CardContent>
@@ -512,7 +510,7 @@ export default function Changes() {
       </CardHeader>
       <CardContent>
       <div className="space-y-2">
-      {selectedChange.validation_steps.map((step) => (
+        {(selectedChange.validation_steps || []).length === 0 ? <p className="text-xs text-muted-foreground italic">None</p> : selectedChange.validation_steps.map((step) => (
         <div key={step.id} className="flex items-center gap-3">
         <Checkbox checked={step.completed} disabled />
         <span className={`text-sm ${step.completed ? "line-through text-muted-foreground" : ""}`}>
@@ -531,7 +529,7 @@ export default function Changes() {
       Rollback Plan
       </p>
       <p className="text-sm text-muted-foreground bg-warning/5 border border-warning/20 rounded-lg p-3">
-      {selectedChange.rollback_plan}
+      {selectedChange.rollback_plan ? selectedChange.rollback_plan : "No rollback plan provided"}
       </p>
       </div>
 
@@ -545,7 +543,7 @@ export default function Changes() {
       </CardHeader>
       <CardContent>
       <div className="space-y-4">
-      {selectedChange.timeline.map((event, index) => (
+        {(selectedChange.timeline || []).length === 0 ? <p className="text-xs text-muted-foreground italic">No timeline events yet</p> : selectedChange.timeline.map((event, index) => (
       <div key={event.id} className="flex gap-4">
       <div className="flex flex-col items-center">
       <div className="h-3 w-3 rounded-full bg-primary" />
@@ -557,7 +555,7 @@ export default function Changes() {
       <div className="flex items-center gap-2">
       <p className="text-sm font-medium">{event.action}</p>
       <span className="text-xs text-muted-foreground">
-      {formatDistanceToNow(new Date(event.timestamp), { addSuffix: true })}
+      {event.timestamp ? formatDistanceToNow(new Date(event.timestamp), { addSuffix: true }) : "—"}
       </span>
       </div>
       <p className="text-xs text-muted-foreground flex items-center gap-1">
@@ -621,6 +619,8 @@ export default function Changes() {
     )}
     </DialogContent>
     </Dialog>
+      <ChangeFormModal open={changeModalOpen} onOpenChange={setChangeModalOpen} onSaved={fetchChanges} />
     </div>
   );
 }
+
