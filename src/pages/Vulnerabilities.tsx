@@ -347,7 +347,7 @@ export default function Vulnerabilities() {
                             <span className="text-muted-foreground text-sm">-</span>
                           )}
                         </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">{vuln.source}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{vuln.source || "—"}</TableCell>
                       </TableRow>
                     );
                   })}

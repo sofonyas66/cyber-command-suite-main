@@ -132,9 +132,11 @@ export default function Runbooks() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
                     <h3 className="font-medium">{runbook.title}</h3>
-                    <Badge variant="outline" className="text-xs">
-                      {runbook.category}
-                    </Badge>
+                    {runbook.category && (
+                      <Badge variant="outline" className="text-xs">
+                        {runbook.category}
+                      </Badge>
+                    )}
                   </div>
                   <p className="text-sm text-muted-foreground">{runbook.description}</p>
                   <div className="flex items-center gap-4 mt-2">
@@ -231,22 +233,25 @@ export default function Runbooks() {
                         Quick Commands
                       </h4>
                       <div className="space-y-2">
-                        {runbook.commands.map((cmd, index) => (
-                          <div key={index} className="code-block flex items-center justify-between gap-2">
-                            <div className="min-w-0">
-                              <p className="text-xs text-muted-foreground mb-1">{cmd.label}</p>
-                              <code className="text-xs break-all">{cmd.cmd}</code>
+                        {runbook.commands.filter(c => c.cmd).map((cmd, index) => {
+                          const label = cmd.label && cmd.label.trim() && cmd.label !== cmd.cmd ? cmd.label : null;
+                          return (
+                            <div key={index} className="code-block flex items-center justify-between gap-2">
+                              <div className="min-w-0">
+                                {label && <p className="text-xs text-muted-foreground mb-1">{label}</p>}
+                                <code className="text-xs break-all">{cmd.cmd}</code>
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => copyCommand(cmd.cmd)}
+                                className="flex-shrink-0"
+                              >
+                                <Copy className="h-4 w-4" />
+                              </Button>
                             </div>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => copyCommand(cmd.cmd)}
-                              className="flex-shrink-0"
-                            >
-                              <Copy className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        ))}
+                          );
+                        }).filter(Boolean)}
                       </div>
                     </div>
                   )}
