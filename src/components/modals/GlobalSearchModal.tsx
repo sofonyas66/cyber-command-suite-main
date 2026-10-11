@@ -136,10 +136,9 @@ function RealSearchResults({ query, category }: { query: string; category: Searc
         const workspaceFilter = activeWorkspace?.id ? `workspace_id.eq.${activeWorkspace.id}` : "";
         const likePattern = `%${clean}%`;
         const fetchTable = async (table: string, fields: string) => {
-          let queryBuilder = supabase.from(table).select(fields);
+          let queryBuilder = (supabase.from(table as any) as any).select(fields);
           if (workspaceFilter) queryBuilder = queryBuilder.eq("workspace_id", activeWorkspace!.id as any);
-          // Search via or on text fields - simplified approach
-          const { data } = await queryBuilder.or(`title.ilike.${likePattern},hostname.ilike.${likePattern},cve_id.ilike.${likePattern},incident_number.ilike.${likePattern}`).limit(5);
+          const { data } = await (queryBuilder.or(`title.ilike.${likePattern},hostname.ilike.${likePattern},cve_id.ilike.${likePattern},incident_number.ilike.${likePattern}`) as any).limit(5);
           return data || [];
         };
         const [assets, vulnerabilities, incidents, runbooks, logs] = await Promise.all([

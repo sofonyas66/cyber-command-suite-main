@@ -296,12 +296,12 @@ export default function IntegrationsTab() {
     
     // Create sync run record
     const { data: syncRun, error: syncError } = await supabase
-      .from("sync_runs")
+      .from("sync_runs" as any)
       .insert({
         integration_id: integrationId,
         workspace_id: activeWorkspace?.id ? (activeWorkspace.id as any) : null,
         status: "running",
-      })
+      } as any)
       .select()
       .single();
 
@@ -323,7 +323,7 @@ export default function IntegrationsTab() {
         records_in: Math.floor(Math.random() * 1000),
         records_out: Math.floor(Math.random() * 50),
       })
-      .eq("id", syncRun.id);
+      .eq("id", (syncRun as any).id);
 
     // Update last_sync_at
     await supabase

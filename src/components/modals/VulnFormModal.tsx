@@ -20,7 +20,7 @@ interface VulnFormModalProps {
 const isValidCVSS = (value: string): boolean => {
   if (!value || value.trim() === '') return true; // allow empty/null
   const num = parseFloat(value);
-  return !isNaN(num) && num >= 0 && num <= 10 && value.match(/^\d+(\.\d)?$/); // max 1 decimal place
+  return !isNaN(num) && num >= 0 && num <= 10 && value.match(/^\d+(\.\d)?$/) !== null; // max 1 decimal place
 };
 
 export default function VulnFormModal({ open, onOpenChange, initialAssetId = null, onSaved }: VulnFormModalProps) {

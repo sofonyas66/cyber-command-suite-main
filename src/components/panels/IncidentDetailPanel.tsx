@@ -107,7 +107,7 @@ export default function IncidentDetailPanel({
     try {
       const { error } = await supabase
         .from("incidents")
-        .update({ [field]: value || null })
+        .update({ [field]: value || null } as any)
         .eq("id", incident.id)
         .eq("workspace_id", activeWorkspace?.id as any);
       if (error) throw error;

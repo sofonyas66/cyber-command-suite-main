@@ -273,14 +273,6 @@ export default function Dashboard() {
                     <p className="text-sm text-muted-foreground">{kpi.title}</p>
                     <p className="text-3xl font-bold mt-1">{kpi.value}</p>
                     <div className="flex items-center gap-1 mt-2">
-                      <TrendingUp
-                        className={`h-3 w-3 ${kpi.trend === "down" ? "text-success rotate-180" : "text-muted-foreground"}`}
-                      />
-                      {kpi.change !== null && (
-                        <span className={`text-xs ${kpi.trend === "down" ? "text-success" : "text-muted-foreground"}`}>
-                          {kpi.change} from last week
-                        </span>
-                      )}
                     </div>
                   </div>
                   <div className={`p-2.5 rounded-lg ${kpi.bgColor}`}>

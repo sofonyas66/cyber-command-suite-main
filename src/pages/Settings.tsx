@@ -269,3 +269,27 @@ Theme tab: real theme picker (light/dark/system), saves via useTheme, notificati
 Integrations tab: renders IntegrationsTab component (real sync configs).
 Data tab: export/import buttons (UI only, no actual file handler implemented), Delete All button (destructive, not implemented).
 */
+
+function ChangePasswordSection() {
+  const [newPass, setNewPass] = useState("");
+  const [confirmPass, setConfirmPass] = useState("");
+  const handleChange = async () => {
+    if (newPass.length < 8) { toast.error("Password must be at least 8 characters"); return; }
+    if (newPass !== confirmPass) { toast.error("Passwords do not match"); return; }
+    const { error } = await supabase.auth.updateUser({ password: newPass });
+    if (error) toast.error(error.message || String(error));
+    else { toast.success("Password updated"); setNewPass(""); setConfirmPass(""); }
+  };
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <div><p className="font-medium">Change Password</p><p className="text-sm text-muted-foreground">Update your password regularly</p></div>
+        <Button variant="outline" size="sm" onClick={handleChange}>Change Password</Button>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Input type="password" placeholder="New password (min 8)" value={newPass} onChange={e => setNewPass(e.target.value)} />
+        <Input type="password" placeholder="Confirm password" value={confirmPass} onChange={e => setConfirmPass(e.target.value)} />
+      </div>
+    </div>
+  );
+}

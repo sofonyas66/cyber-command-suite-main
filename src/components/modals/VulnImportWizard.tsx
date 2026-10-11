@@ -257,7 +257,7 @@ export function VulnImportWizard({ open, onOpenChange, onImportComplete }: VulnI
   const isValidCVSS = (value: string): boolean => {
     if (!value || value.trim() === '') return true; // allow empty/null
     const num = parseFloat(value);
-    return !isNaN(num) && num >= 0 && num <= 10 && value.match(/^\d+(\.\d)?$/);
+    return !isNaN(num) && num >= 0 && num <= 10 && value.match(/^\d+(\.\d)?$/) !== null;
   };
 
   const normalizeSeverity = (value: string): string => {
