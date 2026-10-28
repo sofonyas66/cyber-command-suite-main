@@ -81,7 +81,7 @@ export default function Incidents() {
         .select('id, incident_number, title, severity, status, opened_at, closed_at')
         .order('opened_at', { ascending: false })
         .limit(1000);
-      if (activeWorkspace?.id) q = q.eq('workspace_id', activeWorkspace.id as any);
+      if (activeWorkspace?.id) q = q.eq('workspace_id', activeWorkspace.id);
       const { data, error } = await q;
       if (error) throw error;
       

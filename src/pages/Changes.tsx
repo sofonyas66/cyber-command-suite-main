@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -47,11 +49,15 @@ import {
   Calendar,
   User,
   ExternalLink,
+  RotateCcw,
+  XCircle,
+  Loader2,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useWorkspace } from "@/hooks/useWorkspace";
+import { useAuth } from "@/hooks/useAuth";
 import ChangeFormModal from "@/components/modals/ChangeFormModal";
 
 type ChangeType = "Firewall" | "ACL" | "Routing" | "VPN" | "Switch" | "DNS";
@@ -70,6 +76,8 @@ interface TimelineEvent {
   user: string;
   timestamp: string;
   notes?: string;
+  from?: string;
+  to?: string;
 }
 
 interface Change {
@@ -135,11 +143,15 @@ export default function Changes() {
   const [selectedChange, setSelectedChange] = useState<Change | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [changeModalOpen, setChangeModalOpen] = useState(false);
+  const [sendBackReason, setSendBackReason] = useState("");
+  const [showSendBackDialog, setShowSendBackDialog] = useState(false);
   const { activeWorkspace } = useWorkspace();
+  const { user } = useAuth();
 
   const [changes, setChanges] = useState<any[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [transitionLoading, setTransitionLoading] = useState<string | null>(null);
 
   const fetchChanges = async () => {
     setLoading(true);
@@ -166,6 +178,69 @@ export default function Changes() {
   useEffect(() => {
     fetchChanges();
   }, [activeWorkspace?.id]);
+
+  const transitionChange = async (change: Change, nextStatus: ChangeStatus, options?: { notes?: string }) => {
+    if (!user || !activeWorkspace?.id) {
+      toast.error('User not authenticated or no workspace selected');
+      return;
+    }
+    setTransitionLoading(change.id);
+    try {
+      const fromStatus = change.status;
+      const timeline = Array.isArray(change.timeline) ? [...change.timeline] : [];
+      const newEvent: TimelineEvent = {
+        id: crypto.randomUUID(),
+        action: nextStatus,
+        from: fromStatus,
+        to: nextStatus,
+        user: user.email || user.id,
+        timestamp: new Date().toISOString(),
+        notes: options?.notes,
+      };
+      timeline.push(newEvent);
+
+      const updatePayload: any = {
+        status: nextStatus,
+        timeline,
+      };
+      if (nextStatus === 'Approved') {
+        updatePayload.approver = user.email || user.id;
+        updatePayload.approved_at = new Date().toISOString();
+      } else if (nextStatus === 'Implemented') {
+        updatePayload.implemented_at = new Date().toISOString();
+      } else if (nextStatus === 'Verified') {
+        updatePayload.verified_at = new Date().toISOString();
+      } else if (nextStatus === 'Closed') {
+        updatePayload.closed_at = new Date().toISOString();
+      }
+
+      const { error } = await supabase
+        .from('changes')
+        .update(updatePayload)
+        .eq('id', change.id)
+        .eq('workspace_id', activeWorkspace.id);
+      if (error) throw error;
+
+      toast.success(`Change status updated to ${nextStatus}`);
+      await fetchChanges();
+      const updated = changes?.find(c => c.id === change.id);
+      if (updated) setSelectedChange(updated);
+    } catch (err: any) {
+      console.error('Transition failed', err);
+      toast.error(err.message || String(err));
+    } finally {
+      setTransitionLoading(null);
+    }
+  };
+
+  const handleSendBack = () => {
+    if (!sendBackReason.trim()) return;
+    if (selectedChange) {
+      transitionChange(selectedChange, 'Draft', { notes: `Sent back from Review: ${sendBackReason}` });
+      setSendBackReason('');
+      setShowSendBackDialog(false);
+    }
+  };
 
   const sourceChanges = changes === null ? [] : changes;
 
@@ -598,20 +673,79 @@ export default function Changes() {
 
       {/* Actions */}
       <div className="flex justify-end gap-2">
-      <Button variant="outline" onClick={() => setDetailOpen(false)}>
+      <Button variant="outline" onClick={() => setDetailOpen(false)} disabled={transitionLoading === selectedChange.id}>
       Close
       </Button>
       {selectedChange.status === "Draft" && (
-        <Button>Submit for Review</Button>
+        <Button
+          onClick={() => transitionChange(selectedChange, "Review")}
+          disabled={transitionLoading === selectedChange.id}
+        >
+          {transitionLoading === selectedChange.id ? (
+            <> <Loader2 className="h-4 w-4 animate-spin mr-2" /> Saving... </>
+          ) : (
+            "Submit for Review"
+          )}
+        </Button>
       )}
       {selectedChange.status === "Review" && (
-        <Button className="bg-success hover:bg-success/90">Approve</Button>
+        <>
+          <Button
+            onClick={() => setShowSendBackDialog(true)}
+            variant="outline"
+            disabled={transitionLoading === selectedChange.id}
+          >
+            Send back to Draft
+          </Button>
+          <Button
+            onClick={() => transitionChange(selectedChange, "Approved")}
+            disabled={transitionLoading === selectedChange.id}
+            className="bg-success hover:bg-success/90"
+          >
+            {transitionLoading === selectedChange.id ? (
+              <> <Loader2 className="h-4 w-4 animate-spin mr-2" /> Saving... </>
+            ) : (
+              "Approve"
+            )}
+          </Button>
+        </>
       )}
       {selectedChange.status === "Approved" && (
-        <Button>Mark as Implemented</Button>
+        <Button
+          onClick={() => transitionChange(selectedChange, "Implemented")}
+          disabled={transitionLoading === selectedChange.id}
+        >
+          {transitionLoading === selectedChange.id ? (
+            <> <Loader2 className="h-4 w-4 animate-spin mr-2" /> Saving... </>
+          ) : (
+            "Mark as Implemented"
+          )}
+        </Button>
       )}
       {selectedChange.status === "Implemented" && (
-        <Button className="bg-success hover:bg-success/90">Verify</Button>
+        <Button
+          onClick={() => transitionChange(selectedChange, "Verified")}
+          disabled={transitionLoading === selectedChange.id}
+          className="bg-success hover:bg-success/90"
+        >
+          {transitionLoading === selectedChange.id ? (
+            <> <Loader2 className="h-4 w-4 animate-spin mr-2" /> Saving... </>
+          ) : (
+            "Verify"
+          )}
+        </Button>
+      )}
+      {selectedChange.status === "Verified" && (
+        <Button
+          onClick={() => transitionChange(selectedChange, "Closed")}
+          disabled={transitionLoading === selectedChange.id}
+        >
+          {transitionLoading === selectedChange.id ? (
+            <> <Loader2 className="h-4 w-4 animate-spin mr-2" /> Saving... </>
+          ) : (
+            "Close"
+          )}
+        </Button>
       )}
       </div>
       </div>
@@ -619,7 +753,39 @@ export default function Changes() {
     )}
     </DialogContent>
     </Dialog>
-      <ChangeFormModal open={changeModalOpen} onOpenChange={setChangeModalOpen} onSaved={fetchChanges} />
+
+    {showSendBackDialog && (
+      <Dialog open={showSendBackDialog} onOpenChange={setShowSendBackDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Send Back to Draft</DialogTitle>
+            <DialogDescription>Provide a reason for sending this change back to Draft.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 mt-4">
+            <div className="space-y-2">
+              <Label htmlFor="sendBackReason">Reason *</Label>
+              <Textarea
+                id="sendBackReason"
+                value={sendBackReason}
+                onChange={(e) => setSendBackReason(e.target.value)}
+                rows={3}
+                placeholder="Explain why this change should be sent back..."
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => { setSendBackReason(''); setShowSendBackDialog(false); }} disabled={transitionLoading === selectedChange?.id}>
+                Cancel
+              </Button>
+              <Button onClick={handleSendBack} disabled={transitionLoading === selectedChange?.id || !sendBackReason.trim()}>
+                {transitionLoading === selectedChange?.id ? (<> <Loader2 className="h-4 w-4 animate-spin mr-2" /> Saving... </>) : ("Send Back")}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    )}
+
+    <ChangeFormModal open={changeModalOpen} onOpenChange={setChangeModalOpen} onSaved={fetchChanges} />
     </div>
   );
 }

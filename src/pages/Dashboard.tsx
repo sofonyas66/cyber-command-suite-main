@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -40,6 +41,7 @@ const getSeverityColor = (severity: string) => {
 
 export default function Dashboard() {
   const { activeWorkspace } = useWorkspace();
+  const navigate = useNavigate();
 
   const [openVulns, setOpenVulns] = useState<number | null>(null);
   const [activeIncidents, setActiveIncidents] = useState<number | null>(null);
@@ -93,7 +95,7 @@ export default function Dashboard() {
 
         // Recent alerts (incidents)
         let incQuery = supabase.from('incidents').select('id, title, severity, opened_at, created_at').order('created_at', { ascending: false }).limit(10);
-        if (activeWorkspace?.id) incQuery = incQuery.eq('workspace_id', activeWorkspace.id as any);
+        if (activeWorkspace?.id) incQuery = incQuery.eq('workspace_id', activeWorkspace.id);
         const { data: recentInc } = await incQuery;
         setRecentAlertsState((recentInc || []).map((i: any) => {
           let timeDisplay = "-";
@@ -466,7 +468,7 @@ export default function Dashboard() {
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle className="text-lg">Recent Alerts</CardTitle>
-              <Button variant="ghost" size="sm" className="text-xs">
+              <Button variant="ghost" size="sm" className="text-xs" onClick={() => navigate("/incidents")}>
                 View all
                 <ArrowRight className="ml-1 h-3 w-3" />
               </Button>
@@ -509,7 +511,7 @@ export default function Dashboard() {
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle className="text-lg">Upcoming Tasks</CardTitle>
-              <Button variant="ghost" size="sm" className="text-xs">
+              <Button variant="ghost" size="sm" className="text-xs" onClick={() => navigate("/settings")}>
                 View all
                 <ArrowRight className="ml-1 h-3 w-3" />
               </Button>

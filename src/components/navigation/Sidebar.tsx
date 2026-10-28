@@ -63,7 +63,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
       {/* Navigation */}
       <nav className="flex-1 p-3 space-y-1">
         {navItems.map((item) => {
-          const isActive = location.pathname === item.path;
+          const isActive = location.pathname === item.path || (item.path !== '/' && location.pathname.startsWith(item.path));
           const Icon = item.icon;
 
           const linkContent = (

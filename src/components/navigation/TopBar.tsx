@@ -36,7 +36,7 @@ export default function TopBar({ onQuickAdd, onNotifications }: TopBarProps) {
     const fetchUnread = async () => {
       try {
         let q = supabase.from('notifications').select('id', { count: 'exact' }).eq('read', false);
-        if (activeWorkspace?.id) q = q.eq('workspace_id', activeWorkspace.id as any);
+        if (activeWorkspace?.id) q = q.eq('workspace_id', activeWorkspace.id);
         const { count, error } = await q;
         if (!error && count !== null) setUnreadCount(count);
       } catch {

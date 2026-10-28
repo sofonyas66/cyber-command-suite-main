@@ -105,8 +105,9 @@ export function WorkspaceSwitcher() {
             <CommandGroup>
               <CommandItem
                 onSelect={() => {
-                  // TODO: Open create workspace modal
                   setOpen(false);
+                  // Placeholder for create workspace modal - will be implemented
+                  alert('Create workspace modal not yet implemented');
                 }}
                 className="text-muted-foreground"
               >

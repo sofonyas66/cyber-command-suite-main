@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,6 +41,7 @@ import {
   Download,
   Upload,
   Loader2,
+  RefreshCw,
 } from "lucide-react";
 import { format } from "date-fns";
 import AssetDetailPanel from "@/components/panels/AssetDetailPanel";
@@ -103,6 +105,7 @@ export default function Assets() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [editingAsset, setEditingAsset] = useState<any | null>(null);
+  const navigate = useNavigate();
 
   const { activeWorkspace } = useWorkspace();
 
@@ -116,7 +119,7 @@ export default function Assets() {
     setLoadError(null);
     try {
       let query = supabase.from('assets').select('*').order('hostname', { ascending: true }).limit(1000);
-      if (activeWorkspace?.id) query = query.eq('workspace_id', activeWorkspace.id as any);
+      if (activeWorkspace?.id) query = query.eq('workspace_id', activeWorkspace.id);
       const { data, error } = await query;
       if (error) throw error;
       setAssets(data || []);
@@ -147,6 +150,38 @@ export default function Assets() {
     return matchesSearch && matchesEnv && matchesCrit;
   });
 
+  const exportToCSV = () => {
+    if (!filteredAssets.length) return;
+    
+    const headers = ["Hostname", "IP Address", "MAC Address", "OS", "Asset Type", "Owner", "Location", "Environment", "Criticality", "Last Seen"];
+    const csvContent = [
+      headers.join(","),
+      ...filteredAssets.map(asset => [
+        `"${asset.hostname || ''}"`,
+        `"${asset.ip_address || ''}"`,
+        `"${asset.mac_address || ''}"`,
+        `"${asset.os || ''}"`,
+        `"${asset.asset_type || ''}"`,
+        `"${asset.owner || ''}"`,
+        `"${asset.location || ''}"`,
+        `"${asset.environment || ''}"`,
+        `"${asset.criticality || ''}"`,
+        `"${asset.last_seen || ''}"`
+      ].join(","))
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `assets_export_${format(new Date(), "yyyy-MM-dd")}.csv`);
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success("Assets exported to CSV");
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -160,9 +195,18 @@ export default function Assets() {
             <Upload className="h-4 w-4 mr-2" />
             Import
           </Button>
-          <Button variant="outline" size="sm">
+          <Button variant="outline" size="sm" onClick={exportToCSV}>
             <Download className="h-4 w-4 mr-2" />
             Export
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => {
+            setSearchQuery("");
+            setEnvironmentFilter("all");
+            setCriticalityFilter("all");
+            toast.success("Filters cleared");
+          }}>
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Reset Filters
           </Button>
           <Button size="sm" onClick={() => setFormOpen(true)}>
             <Plus className="h-4 w-4 mr-2" />

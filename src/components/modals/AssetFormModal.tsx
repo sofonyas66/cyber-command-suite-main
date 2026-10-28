@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
+import { Loader2 } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { useWorkspace } from "@/hooks/useWorkspace";
@@ -84,7 +85,7 @@ export default function AssetFormModal({ open, onOpenChange, asset = null, onSav
     e.preventDefault();
     setLoading(true);
     try {
-      const payload = {
+      const payload: any = {
         hostname: form.hostname,
         ip_address: form.ip_address || null,
         mac_address: form.mac_address || null,
@@ -96,7 +97,7 @@ export default function AssetFormModal({ open, onOpenChange, asset = null, onSav
         criticality: form.criticality,
         tags: form.tags ? form.tags.split(',').map((t) => t.trim()).filter(Boolean) : [],
         notes: form.notes || null,
-      } as any;
+      };
 
       if (asset && asset.id) {
         const { error } = await supabase.from('assets').update(payload).eq('id', asset.id);
@@ -134,7 +135,7 @@ export default function AssetFormModal({ open, onOpenChange, asset = null, onSav
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Add New Asset</DialogTitle>
+          <DialogTitle>{asset ? "Edit Asset" : "Add New Asset"}</DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4 mt-4">
@@ -277,7 +278,10 @@ export default function AssetFormModal({ open, onOpenChange, asset = null, onSav
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit">Create Asset</Button>
+            <Button type="submit" disabled={loading}>
+              {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {asset ? "Update Asset" : "Create Asset"}
+            </Button>
           </div>
         </form>
       </DialogContent>
