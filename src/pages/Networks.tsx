@@ -23,6 +23,7 @@ import { Search, Plus, Network, Globe, Shield, Router, Building, Layers, MapPin,
 import { supabase } from "@/integrations/supabase/client";
 import { useWorkspace } from "@/hooks/useWorkspace";
 import { toast } from "sonner";
+import SiteFormModal from "@/components/modals/SiteFormModal";
 
 // Demo data
 
@@ -50,6 +51,7 @@ export default function Networks() {
   const [siteFilter, setSiteFilter] = useState("all");
   const [zoneFilter, setZoneFilter] = useState("all");
   const [activeTab, setActiveTab] = useState("subnets");
+  const [siteModalOpen, setSiteModalOpen] = useState(false);
   const { activeWorkspace } = useWorkspace();
 
   const [sites, setSites] = useState<any[] | null>(null);
@@ -259,6 +261,13 @@ export default function Networks() {
         {/* Sites Tab */}
         <TabsContent value="sites" className="mt-4">
           <Card>
+            <CardHeader className="flex flex-row items-center justify-between p-4 pb-0">
+              <CardTitle className="text-lg">Sites</CardTitle>
+              <Button size="sm" onClick={() => setSiteModalOpen(true)} disabled={loading}>
+                <Plus className="h-4 w-4 mr-2" />
+                Add Site
+              </Button>
+            </CardHeader>
             <CardContent className="p-0">
               {sitesError && !loading && (
                 <div className="p-6 text-center">
@@ -272,46 +281,59 @@ export default function Networks() {
                 </div>
               )}
               {!sitesError && (
-                <Table>
-                  <TableHeader>
-                    <TableRow className="table-header">
-                      <TableHead>Site Name</TableHead>
-                      <TableHead>Address</TableHead>
-                      <TableHead>Networks</TableHead>
-                      <TableHead>Assets</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredSites.map((site) => (
-                      <TableRow key={site.id} className="cursor-pointer hover:bg-muted/50">
-                        <TableCell>
-                          <div className="flex items-center gap-3">
-                            <div className="p-2 rounded-lg bg-primary/10">
-                              <Building className="h-4 w-4 text-primary" />
-                            </div>
-                            <div>
-                              <p className="font-medium">{site.name}</p>
-                              <p className="text-xs text-muted-foreground">{site.description}</p>
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <MapPin className="h-3 w-3" />
-                            {site.address}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="secondary">{site.network_count} networks</Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{site.asset_count} assets</Badge>
-                        </TableCell>
+                filteredSites.length > 0 ? (
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="table-header">
+                        <TableHead>Site Name</TableHead>
+                        <TableHead>Address</TableHead>
+                        <TableHead>Networks</TableHead>
+                        <TableHead>Assets</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
+                    </TableHeader>
+                    <TableBody>
+                      {filteredSites.map((site) => (
+                        <TableRow key={site.id} className="cursor-pointer hover:bg-muted/50">
+                          <TableCell>
+                            <div className="flex items-center gap-3">
+                              <div className="p-2 rounded-lg bg-primary/10">
+                                <Building className="h-4 w-4 text-primary" />
+                              </div>
+                              <div>
+                                <p className="font-medium">{site.name}</p>
+                                <p className="text-xs text-muted-foreground">{site.description}</p>
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                              <MapPin className="h-3 w-3" />
+                              {site.address}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="secondary">{site.network_count} networks</Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{site.asset_count} assets</Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                ) : (
+                  <div className="p-12 text-center">
+                    <Building className="h-12 w-12 text-muted-foreground/50 mx-auto mb-4" />
+                    <p className="text-lg font-medium text-muted-foreground mb-2">No sites yet</p>
+                    <p className="text-sm text-muted-foreground mb-6">
+                      Create your first site to organize networks and assets by physical location.
+                    </p>
+                    <Button onClick={() => setSiteModalOpen(true)} disabled={loading}>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add your first site
+                    </Button>
+                  </div>
+                ))}
             </CardContent>
           </Card>
         </TabsContent>
@@ -453,6 +475,11 @@ export default function Networks() {
           </div>
         </CardContent>
       </Card>
+      <SiteFormModal
+        open={siteModalOpen}
+        onOpenChange={setSiteModalOpen}
+        onSaved={fetchAll}
+      />
     </div>
   );
 }
