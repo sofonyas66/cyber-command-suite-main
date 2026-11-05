@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,11 +19,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, Plus, Network, Globe, Shield, Router, Building, Layers, MapPin, RefreshCw, AlertTriangle } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Search, Plus, Network, Globe, Shield, Router, Building, Layers, MapPin, RefreshCw, AlertTriangle, MoreHorizontal, Edit, Trash2, Eye } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useWorkspace } from "@/hooks/useWorkspace";
 import { toast } from "sonner";
 import SiteFormModal from "@/components/modals/SiteFormModal";
+import SubnetFormModal from "@/components/modals/SubnetFormModal";
+import ConfirmDeleteDialog from "@/components/modals/ConfirmDeleteDialog";
 
 // Demo data
 
@@ -52,7 +61,16 @@ export default function Networks() {
   const [zoneFilter, setZoneFilter] = useState("all");
   const [activeTab, setActiveTab] = useState("subnets");
   const [siteModalOpen, setSiteModalOpen] = useState(false);
-  const { activeWorkspace } = useWorkspace();
+  const [subnetModalOpen, setSubnetModalOpen] = useState(false);
+  const [editingSite, setEditingSite] = useState<any>(null);
+  const [editingSubnet, setEditingSubnet] = useState<any>(null);
+  const [deletingSite, setDeletingSite] = useState<any>(null);
+  const [deletingSubnet, setDeletingSubnet] = useState<any>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteContext, setDeleteContext] = useState({ subnets: 0, vlans: 0, assets: 0 });
+
+  const { activeWorkspace, canDelete } = useWorkspace();
 
   const [sites, setSites] = useState<any[] | null>(null);
   const [networks, setNetworks] = useState<any[] | null>(null);
@@ -120,29 +138,104 @@ export default function Networks() {
   const sourceVlans = vlans === null ? [] : vlans || [];
   const sourceSites = sites === null ? [] : sites || [];
 
+  const uniqueZones = useMemo(() => {
+    const zones = sourceNetworks
+      .map((n: any) => n.firewall_zone)
+      .filter((z: any): z is string => typeof z === "string" && z.length > 0);
+    return [...new Set(zones)];
+  }, [sourceNetworks]);
+
+  const siteMap = useMemo(() => {
+    return new Map(sourceSites.map(s => [s.id, s.name]));
+  }, [sourceSites]);
+
+  const siteNetworkCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    sourceNetworks.forEach(n => {
+      if (n.site_id) {
+        counts.set(n.site_id, (counts.get(n.site_id) || 0) + 1);
+      }
+    });
+    return counts;
+  }, [sourceNetworks]);
+
   const filteredNetworks = sourceNetworks.filter((network) => {
+    const siteName = network.site_id ? siteMap.get(network.site_id) || "" : "";
     const matchesSearch = network.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       network.cidr.includes(searchQuery) ||
-      network.firewall_zone.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesSite = siteFilter === "all" || network.site === siteFilter;
-    const matchesZone = zoneFilter === "all" || network.firewall_zone.toLowerCase() === zoneFilter.toLowerCase();
+      (network.firewall_zone?.toLowerCase() || "").includes(searchQuery.toLowerCase());
+    const matchesSite = siteFilter === "all" || siteName === siteFilter;
+    const matchesZone = zoneFilter === "all" || network.firewall_zone?.toLowerCase() === zoneFilter.toLowerCase();
     return matchesSearch && matchesSite && matchesZone;
   });
 
   const filteredVlans = sourceVlans.filter((vlan) => {
+    const siteName = vlan.site_id ? siteMap.get(vlan.site_id) || "" : "";
     const matchesSearch = vlan.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      vlan.vlan_id.toString().includes(searchQuery);
-    const matchesSite = siteFilter === "all" || vlan.site === siteFilter;
+      vlan.vlan_id?.toString().includes(searchQuery);
+    const matchesSite = siteFilter === "all" || siteName === siteFilter;
     return matchesSearch && matchesSite;
   });
 
   const filteredSites = sourceSites.filter((site) =>
     site.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    site.address.toLowerCase().includes(searchQuery.toLowerCase())
+    (site.address || "").toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const uniqueZones = [...new Set(sourceNetworks.map((n: any) => n.firewall_zone))];
   const uniqueSites = [...new Set(sourceSites.map((s: any) => s.name))];
+
+  const handleDeleteSite = async (site: any) => {
+    setDeletingSite(site);
+    setDeleteDialogOpen(true);
+    try {
+      const [{ count: subnetCount }, { count: vlanCount }] = await Promise.all([
+        supabase.from("networks").select("*", { count: "exact", head: true }).eq("site_id", site.id),
+        supabase.from("vlans").select("*", { count: "exact", head: true }).eq("site_id", site.id)
+      ]);
+      setDeleteContext({ subnets: subnetCount || 0, vlans: vlanCount || 0, assets: 0 });
+    } catch (err) {
+      console.error("Failed to fetch delete context", err);
+      setDeleteContext({ subnets: 0, vlans: 0, assets: 0 });
+    }
+  };
+
+  const handleDeleteSubnet = async (subnet: any) => {
+    setDeletingSubnet(subnet);
+    setDeleteDialogOpen(true);
+    try {
+      const [{ count: vlanCount }, { count: assetCount }] = await Promise.all([
+        supabase.from("vlans").select("*", { count: "exact", head: true }).eq("network_id", subnet.id),
+        supabase.from("asset_networks").select("*", { count: "exact", head: true }).eq("network_id", subnet.id)
+      ]);
+      setDeleteContext({ subnets: 0, vlans: vlanCount || 0, assets: assetCount || 0 });
+    } catch (err) {
+      console.error("Failed to fetch delete context", err);
+      setDeleteContext({ subnets: 0, vlans: 0, assets: 0 });
+    }
+  };
+
+  const confirmDelete = async () => {
+    setDeleteLoading(true);
+    try {
+      if (deletingSite) {
+        const { data, error } = await supabase.from("sites").delete().eq("id", deletingSite.id).select();
+        if (error) throw error;
+        if (data?.length !== 1) throw new Error("Delete failed or not permitted");
+        toast.success("Site deleted");
+      } else if (deletingSubnet) {
+        const { data, error } = await supabase.from("networks").delete().eq("id", deletingSubnet.id).select();
+        if (error) throw error;
+        if (data?.length !== 1) throw new Error("Delete failed or not permitted");
+        toast.success("Subnet deleted");
+      }
+      setDeleteDialogOpen(false);
+      fetchAll();
+    } catch (err: any) {
+      toast.error(err.message || "Delete failed");
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -152,7 +245,7 @@ export default function Networks() {
           <h1 className="text-2xl font-bold">Networks</h1>
           <p className="text-muted-foreground">Manage sites, subnets, VLANs, and network topology</p>
         </div>
-        <Button size="sm" disabled title="Coming soon">
+        <Button size="sm" onClick={() => setSubnetModalOpen(true)}>
           <Plus className="h-4 w-4 mr-2" />
           Add Network
         </Button>
@@ -289,6 +382,7 @@ export default function Networks() {
                         <TableHead>Address</TableHead>
                         <TableHead>Networks</TableHead>
                         <TableHead>Assets</TableHead>
+                        <TableHead className="w-[50px]"></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -312,10 +406,36 @@ export default function Networks() {
                             </div>
                           </TableCell>
                           <TableCell>
-                            <Badge variant="secondary">{site.network_count} networks</Badge>
+                            <Badge variant="secondary">
+                              {siteNetworkCounts.get(site.id) || 0} networks
+                            </Badge>
                           </TableCell>
                           <TableCell>
-                            <Badge variant="outline">{site.asset_count} assets</Badge>
+                            <Badge variant="outline">{site.asset_count || 0} assets</Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                                <Button variant="ghost" size="icon" className="h-8 w-8">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => { setEditingSite(site); setSiteModalOpen(true); }}>
+                                  <Edit className="h-4 w-4 mr-2" />
+                                  Edit
+                                </DropdownMenuItem>
+                                {canDelete && (
+                                  <>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem className="text-destructive" onClick={() => handleDeleteSite(site)}>
+                                      <Trash2 className="h-4 w-4 mr-2" />
+                                      Delete
+                                    </DropdownMenuItem>
+                                  </>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -341,6 +461,13 @@ export default function Networks() {
         {/* Subnets Tab */}
         <TabsContent value="subnets" className="mt-4">
           <Card>
+            <CardHeader className="flex flex-row items-center justify-between p-4 pb-0">
+              <CardTitle className="text-lg">Subnets</CardTitle>
+              <Button size="sm" onClick={() => setSubnetModalOpen(true)} disabled={loading}>
+                <Plus className="h-4 w-4 mr-2" />
+                Add Subnet
+              </Button>
+            </CardHeader>
             <CardContent className="p-0">
               {networksError && !loading && (
                 <div className="p-6 text-center">
@@ -354,45 +481,84 @@ export default function Networks() {
                 </div>
               )}
               {!networksError && (
-                <Table>
-                  <TableHeader>
-                    <TableRow className="table-header">
-                      <TableHead>Network Name</TableHead>
-                      <TableHead>CIDR</TableHead>
-                      <TableHead>VLAN ID</TableHead>
-                      <TableHead>Firewall Zone</TableHead>
-                      <TableHead>Site</TableHead>
-                      <TableHead>Assets</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredNetworks.map((network) => (
-                      <TableRow key={network.id} className="cursor-pointer hover:bg-muted/50">
-                        <TableCell>
-                          <div>
-                            <p className="font-medium">{network.name}</p>
-                            <p className="text-xs text-muted-foreground">{network.description}</p>
-                          </div>
-                        </TableCell>
-                        <TableCell className="font-mono text-sm">{network.cidr}</TableCell>
-                        <TableCell className="font-mono text-sm">{network.vlan_id}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className={`text-xs ${getZoneColor(network.firewall_zone)}`}>
-                            {network.firewall_zone}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <span className="text-sm text-muted-foreground">{network.site}</span>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="secondary" className="text-xs">
-                            {network.asset_count} assets
-                          </Badge>
-                        </TableCell>
+                sourceNetworks.length === 0 && !loading ? (
+                  <div className="p-12 text-center">
+                    <Network className="h-12 w-12 text-muted-foreground/50 mx-auto mb-4" />
+                    <p className="text-lg font-medium text-muted-foreground mb-2">No subnets yet</p>
+                    <p className="text-sm text-muted-foreground mb-6">
+                      Add your first subnet range to begin tracking network infrastructure.
+                    </p>
+                    <Button onClick={() => setSubnetModalOpen(true)} disabled={loading}>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add your first subnet
+                    </Button>
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="table-header">
+                        <TableHead>Network Name</TableHead>
+                        <TableHead>CIDR</TableHead>
+                        <TableHead>VLAN ID</TableHead>
+                        <TableHead>Firewall Zone</TableHead>
+                        <TableHead>Site</TableHead>
+                        <TableHead>Assets</TableHead>
+                        <TableHead className="w-[50px]"></TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredNetworks.map((network) => (
+                        <TableRow key={network.id} className="cursor-pointer hover:bg-muted/50">
+                          <TableCell>
+                            <div>
+                              <p className="font-medium">{network.name}</p>
+                              <p className="text-xs text-muted-foreground">{network.description}</p>
+                            </div>
+                          </TableCell>
+                          <TableCell className="font-mono text-sm">{network.cidr}</TableCell>
+                          <TableCell className="font-mono text-sm">{network.vlan_id}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className={`text-xs ${getZoneColor(network.firewall_zone || "")}`}>
+                              {network.firewall_zone}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <span className="text-sm text-muted-foreground">{network.site_id ? siteMap.get(network.site_id) : ""}</span>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="secondary" className="text-xs">
+                              {network.asset_count || 0} assets
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                                <Button variant="ghost" size="icon" className="h-8 w-8">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => { setEditingSubnet(network); setSubnetModalOpen(true); }}>
+                                  <Edit className="h-4 w-4 mr-2" />
+                                  Edit
+                                </DropdownMenuItem>
+                                {canDelete && (
+                                  <>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem className="text-destructive" onClick={() => handleDeleteSubnet(network)}>
+                                      <Trash2 className="h-4 w-4 mr-2" />
+                                      Delete
+                                    </DropdownMenuItem>
+                                  </>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )
               )}
             </CardContent>
           </Card>
@@ -477,8 +643,48 @@ export default function Networks() {
       </Card>
       <SiteFormModal
         open={siteModalOpen}
-        onOpenChange={setSiteModalOpen}
+        onOpenChange={(open) => {
+          setSiteModalOpen(open);
+          if (!open) setEditingSite(null);
+        }}
         onSaved={fetchAll}
+        site={editingSite}
+      />
+      <SubnetFormModal
+        open={subnetModalOpen}
+        onOpenChange={(open) => {
+          setSubnetModalOpen(open);
+          if (!open) setEditingSubnet(null);
+        }}
+        onSaved={fetchAll}
+        existingZones={uniqueZones}
+        subnet={editingSubnet}
+      />
+      <ConfirmDeleteDialog
+        open={deleteDialogOpen}
+        onOpenChange={(open) => {
+          setDeleteDialogOpen(open);
+          if (!open) {
+            setDeletingSite(null);
+            setDeletingSubnet(null);
+          }
+        }}
+        title={`Delete ${deletingSite ? "Site" : "Subnet"}?`}
+        description={
+          deletingSite ? (
+            <>
+              <p>Are you sure you want to delete site <strong>{deletingSite.name}</strong>?</p>
+              <p>{deleteContext.subnets} subnets and {deleteContext.vlans} VLANs use this site. They will not be deleted, but will become unassigned.</p>
+            </>
+          ) : deletingSubnet ? (
+            <>
+              <p>Are you sure you want to delete subnet <strong>{deletingSubnet.cidr}</strong>?</p>
+              <p>{deleteContext.vlans} VLANs use this subnet and will become unassigned. {deleteContext.assets} assets linked to it will be unlinked, not deleted.</p>
+            </>
+          ) : null
+        }
+        loading={deleteLoading}
+        onConfirm={confirmDelete}
       />
     </div>
   );

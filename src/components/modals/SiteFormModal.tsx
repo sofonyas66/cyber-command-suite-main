@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -13,17 +13,27 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useWorkspace } from "@/hooks/useWorkspace";
 import { useAuth } from "@/hooks/useAuth";
+import { Loader2 } from "lucide-react";
+
+interface Site {
+  id: string;
+  name: string;
+  address?: string | null;
+  description?: string | null;
+}
 
 interface SiteFormModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSaved?: () => void;
+  site?: Site | null;
 }
 
 export default function SiteFormModal({
   open,
   onOpenChange,
   onSaved,
+  site,
 }: SiteFormModalProps) {
   const { user } = useAuth();
   const { activeWorkspace } = useWorkspace();
@@ -34,6 +44,19 @@ export default function SiteFormModal({
     description: "",
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (site) {
+      setForm({
+        name: site.name || "",
+        address: site.address || "",
+        description: site.description || "",
+      });
+    } else {
+      setForm({ name: "", address: "", description: "" });
+    }
+    setErrors({});
+  }, [site, open]);
 
   const validate = () => {
     const newErrors: Record<string, string> = {};
@@ -48,7 +71,7 @@ export default function SiteFormModal({
     e.preventDefault();
     if (!validate()) return;
     if (!user) {
-      toast.error("Sign in to create sites");
+      toast.error("Sign in to manage sites");
       return;
     }
     if (!activeWorkspace?.id) {
@@ -57,22 +80,42 @@ export default function SiteFormModal({
     }
     setLoading(true);
     try {
-      const payload = {
-        user_id: user.id,
-        workspace_id: activeWorkspace.id,
-        name: form.name.trim(),
-        address: form.address.trim() || null,
-        description: form.description.trim() || null,
-      };
-      const { error } = await supabase.from("sites").insert([payload]);
-      if (error) throw error;
-      toast.success("Site created");
+      if (site) {
+        const payload = {
+          name: form.name.trim(),
+          address: form.address.trim() || null,
+          description: form.description.trim() || null,
+        };
+        const { data, error } = await supabase
+          .from("sites")
+          .update(payload)
+          .eq("id", site.id)
+          .select()
+          .single();
+
+        if (error) throw error;
+        if (!data) throw new Error("Update failed or not permitted");
+
+        toast.success("Site updated");
+      } else {
+        const payload = {
+          user_id: user.id,
+          workspace_id: activeWorkspace.id,
+          name: form.name.trim(),
+          address: form.address.trim() || null,
+          description: form.description.trim() || null,
+        };
+        const { error } = await supabase.from("sites").insert([payload]);
+        if (error) throw error;
+        toast.success("Site created");
+      }
       onOpenChange(false);
       setForm({ name: "", address: "", description: "" });
       onSaved?.();
-    } catch (err: any) {
-      console.error("Create site failed", err);
-      toast.error(err.message || String(err));
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("Save site failed", err);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -82,7 +125,7 @@ export default function SiteFormModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>New Site</DialogTitle>
+          <DialogTitle>{site ? "Edit Site" : "New Site"}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 mt-4">
           <div className="space-y-2">
@@ -121,7 +164,8 @@ export default function SiteFormModal({
               Cancel
             </Button>
             <Button type="submit" disabled={loading}>
-              {loading ? "Creating..." : "Create Site"}
+              {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              {site ? "Save Changes" : "Create Site"}
             </Button>
           </div>
         </form>
