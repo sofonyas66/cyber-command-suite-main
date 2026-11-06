@@ -68,8 +68,7 @@ export default function SubnetFormModal({
     tags: "",
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [warnings, setWarnings] = useState<string[]>([]);
-  const [ignoreWarnings, setIgnoreWarnings] = useState(false);
+  const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
 
   useEffect(() => {
     if (open && activeWorkspace?.id) {
@@ -106,8 +105,7 @@ export default function SubnetFormModal({
       });
     }
     setErrors({});
-    setWarnings([]);
-    setIgnoreWarnings(false);
+    setDuplicateWarning(null);
   }, [subnet, open]);
 
   const fetchSites = async () => {
@@ -142,32 +140,15 @@ export default function SubnetFormModal({
     return ip.split(".").reduce((acc, part) => (acc << 8) + parseInt(part, 10), 0) >>> 0;
   };
 
-  const validate = async (checkDuplicates: boolean = true) => {
+  const validate = () => {
     const newErrors: Record<string, string> = {};
-    const newWarnings: string[] = [];
 
     if (!form.name.trim()) newErrors.name = "Name is required";
-    
+
     if (!form.cidr.trim()) {
       newErrors.cidr = "CIDR is required";
     } else if (!isValidCIDR(form.cidr.trim())) {
       newErrors.cidr = "Invalid IPv4 CIDR (e.g., 10.0.0.0/24)";
-    } else if (checkDuplicates) {
-      // Check for duplicate CIDR in this workspace, ignore self if editing
-      let query = supabase
-        .from("networks")
-        .select("id")
-        .eq("workspace_id", activeWorkspace?.id as string)
-        .eq("cidr", form.cidr.trim());
-      
-      if (subnet) {
-        query = query.neq("id", subnet.id);
-      }
-
-      const { data } = await query.limit(1);
-      if (data && data.length > 0) {
-        newWarnings.push("A subnet with this CIDR already exists in this workspace.");
-      }
     }
 
     if (form.gateway.trim() && !isValidIPv4(form.gateway.trim())) {
@@ -209,23 +190,42 @@ export default function SubnetFormModal({
     }
 
     setErrors(newErrors);
-    setWarnings(newWarnings);
     return Object.keys(newErrors).length === 0;
+  };
+
+  const checkDuplicate = async () => {
+    let query = supabase
+      .from("networks")
+      .select("id")
+      .eq("workspace_id", activeWorkspace?.id as string)
+      .eq("cidr", form.cidr.trim());
+
+    if (subnet) {
+      query = query.neq("id", subnet.id);
+    }
+
+    const { data } = await query.limit(1);
+    return data && data.length > 0;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (loading) return;
-    
-    const isValid = await validate(!ignoreWarnings);
-    if (!isValid) return;
 
-    if (warnings.length > 0 && !ignoreWarnings) {
-      setIgnoreWarnings(true);
-      toast.warning("Please review the warnings before proceeding.");
+    // Step 1: Run validation. If errors, set them and return.
+    const hasErrors = !validate();
+    if (hasErrors) return;
+
+    // Step 2: Query for duplicate
+    const isDuplicate = await checkDuplicate();
+
+    // Step 3: If duplicate exists AND duplicateWarning is null: show warning and return
+    if (isDuplicate && !duplicateWarning) {
+      setDuplicateWarning("A subnet with this CIDR already exists in this workspace.");
       return;
     }
 
+    // Step 4: Otherwise (no duplicate, or duplicateWarning already set): insert
     if (!user) {
       toast.error("Sign in to manage subnets");
       return;
@@ -236,6 +236,7 @@ export default function SubnetFormModal({
     }
 
     setLoading(true);
+    setDuplicateWarning(null);
     try {
       const payload = {
         name: form.name.trim(),
@@ -308,7 +309,10 @@ export default function SubnetFormModal({
               <Input
                 id="cidr"
                 value={form.cidr}
-                onChange={(e) => setForm({ ...form, cidr: e.target.value })}
+                onChange={(e) => {
+                  setForm({ ...form, cidr: e.target.value });
+                  setDuplicateWarning(null);
+                }}
                 placeholder="e.g., 10.0.0.0/24"
                 className={errors.cidr ? "border-destructive" : ""}
               />
@@ -319,7 +323,10 @@ export default function SubnetFormModal({
               <Label htmlFor="site_id">Site</Label>
               <Select
                 value={form.site_id}
-                onValueChange={(val) => setForm({ ...form, site_id: val })}
+                onValueChange={(val) => {
+                  setForm({ ...form, site_id: val });
+                  setDuplicateWarning(null);
+                }}
               >
                 <SelectTrigger id="site_id">
                   <SelectValue placeholder="Select a site" />
@@ -340,7 +347,10 @@ export default function SubnetFormModal({
               <Input
                 id="vlan_id"
                 value={form.vlan_id}
-                onChange={(e) => setForm({ ...form, vlan_id: e.target.value })}
+                onChange={(e) => {
+                  setForm({ ...form, vlan_id: e.target.value });
+                  setDuplicateWarning(null);
+                }}
                 placeholder="1-4094"
                 className={errors.vlan_id ? "border-destructive" : ""}
               />
@@ -433,15 +443,9 @@ export default function SubnetFormModal({
             />
           </div>
 
-          {warnings.length > 0 && (
-            <div className="p-3 rounded-lg bg-warning/10 border border-warning/20 space-y-1">
-              {warnings.map((w, i) => (
-                <p key={i} className="text-sm text-warning font-medium flex items-start gap-2">
-                  <span className="mt-0.5">•</span>
-                  {w}
-                </p>
-              ))}
-              <p className="text-xs text-warning/80">Click the button again to proceed anyway.</p>
+          {duplicateWarning && (
+            <div className="p-3 rounded-lg bg-warning/10 border border-warning/20">
+              <p className="text-sm text-warning font-medium">{duplicateWarning}</p>
             </div>
           )}
 
@@ -456,7 +460,7 @@ export default function SubnetFormModal({
             </Button>
             <Button type="submit" disabled={loading}>
               {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              {subnet ? "Save Changes" : (ignoreWarnings ? "Confirm & Create" : "Create Subnet")}
+              {subnet ? "Save Changes" : (duplicateWarning ? "Confirm & Create" : "Create Subnet")}
             </Button>
           </div>
         </form>

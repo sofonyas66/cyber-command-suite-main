@@ -28,15 +28,18 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Search, Plus, Network, Globe, Shield, Router, Building, Layers, MapPin, RefreshCw, AlertTriangle, MoreHorizontal, Edit, Trash2, Eye } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { Database } from "@/integrations/supabase/types";
 import { useWorkspace } from "@/hooks/useWorkspace";
 import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/errors";
 import SiteFormModal from "@/components/modals/SiteFormModal";
 import SubnetFormModal from "@/components/modals/SubnetFormModal";
+import VlanFormModal from "@/components/modals/VlanFormModal";
 import ConfirmDeleteDialog from "@/components/modals/ConfirmDeleteDialog";
 
-// Demo data
-
-
+type Site = Database["public"]["Tables"]["sites"]["Row"];
+type Subnet = Database["public"]["Tables"]["networks"]["Row"];
+type Vlan = Database["public"]["Tables"]["vlans"]["Row"];
 
 const getZoneColor = (zone: string) => {
   switch (zone.toLowerCase()) {
@@ -62,19 +65,22 @@ export default function Networks() {
   const [activeTab, setActiveTab] = useState("subnets");
   const [siteModalOpen, setSiteModalOpen] = useState(false);
   const [subnetModalOpen, setSubnetModalOpen] = useState(false);
-  const [editingSite, setEditingSite] = useState<any>(null);
-  const [editingSubnet, setEditingSubnet] = useState<any>(null);
-  const [deletingSite, setDeletingSite] = useState<any>(null);
-  const [deletingSubnet, setDeletingSubnet] = useState<any>(null);
+  const [vlanModalOpen, setVlanModalOpen] = useState(false);
+  const [editingSite, setEditingSite] = useState<Site | null>(null);
+  const [editingSubnet, setEditingSubnet] = useState<Subnet | null>(null);
+  const [editingVlan, setEditingVlan] = useState<Vlan | null>(null);
+  const [deletingSite, setDeletingSite] = useState<Site | null>(null);
+  const [deletingSubnet, setDeletingSubnet] = useState<Subnet | null>(null);
+  const [deletingVlan, setDeletingVlan] = useState<Vlan | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
-  const [deleteContext, setDeleteContext] = useState({ subnets: 0, vlans: 0, assets: 0 });
+  const [deleteContext, setDeleteContext] = useState({ subnets: 0, vlans: 0, assets: 0, interfaces: 0 });
 
   const { activeWorkspace, canDelete } = useWorkspace();
 
   const [sites, setSites] = useState<any[] | null>(null);
   const [networks, setNetworks] = useState<any[] | null>(null);
-  const [vlans, setVlans] = useState<any[] | null>(null);
+  const [vlans, setVlans] = useState<Vlan[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [sitesError, setSitesError] = useState<string | null>(null);
   const [networksError, setNetworksError] = useState<string | null>(null);
@@ -92,10 +98,10 @@ export default function Networks() {
       const { data: sData, error: sErr } = await sitesQuery;
       if (sErr) throw sErr;
       setSites(sData || []);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to load sites', err);
-      setSitesError(err.message || String(err));
-      toast.error(`Failed to load sites: ${err.message || String(err)}`);
+      setSitesError(getErrorMessage(err));
+      toast.error(getErrorMessage(err));
       setSites([]);
     }
 
@@ -106,24 +112,24 @@ export default function Networks() {
       const { data: nData, error: nErr } = await netQuery;
       if (nErr) throw nErr;
       setNetworks(nData || []);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to load networks', err);
-      setNetworksError(err.message || String(err));
-      toast.error(`Failed to load networks: ${err.message || String(err)}`);
+      setNetworksError(getErrorMessage(err));
+      toast.error(getErrorMessage(err));
       setNetworks([]);
     }
 
     try {
       // Fetch vlans
-      let vlanQuery = supabase.from('vlans').select('id, vlan_id, name, description, network_id, site_id, created_at').limit(1000);
+      let vlanQuery = supabase.from('vlans').select('id, vlan_id, name, description, network_id, site_id, created_at, updated_at, user_id, workspace_id').limit(1000);
       if (activeWorkspace?.id) vlanQuery = vlanQuery.eq('workspace_id', activeWorkspace.id as any);
       const { data: vData, error: vErr } = await vlanQuery;
       if (vErr) throw vErr;
       setVlans(vData || []);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to load vlans', err);
-      setVlansError(err.message || String(err));
-      toast.error(`Failed to load VLANs: ${err.message || String(err)}`);
+      setVlansError(getErrorMessage(err));
+      toast.error(getErrorMessage(err));
       setVlans([]);
     }
 
@@ -184,7 +190,7 @@ export default function Networks() {
 
   const uniqueSites = [...new Set(sourceSites.map((s: any) => s.name))];
 
-  const handleDeleteSite = async (site: any) => {
+  const handleDeleteSite = async (site: Site) => {
     setDeletingSite(site);
     setDeleteDialogOpen(true);
     try {
@@ -192,14 +198,14 @@ export default function Networks() {
         supabase.from("networks").select("*", { count: "exact", head: true }).eq("site_id", site.id),
         supabase.from("vlans").select("*", { count: "exact", head: true }).eq("site_id", site.id)
       ]);
-      setDeleteContext({ subnets: subnetCount || 0, vlans: vlanCount || 0, assets: 0 });
-    } catch (err) {
+      setDeleteContext({ subnets: subnetCount || 0, vlans: vlanCount || 0, assets: 0, interfaces: 0 });
+    } catch (err: unknown) {
       console.error("Failed to fetch delete context", err);
-      setDeleteContext({ subnets: 0, vlans: 0, assets: 0 });
+      setDeleteContext({ subnets: 0, vlans: 0, assets: 0, interfaces: 0 });
     }
   };
 
-  const handleDeleteSubnet = async (subnet: any) => {
+  const handleDeleteSubnet = async (subnet: Subnet) => {
     setDeletingSubnet(subnet);
     setDeleteDialogOpen(true);
     try {
@@ -207,10 +213,25 @@ export default function Networks() {
         supabase.from("vlans").select("*", { count: "exact", head: true }).eq("network_id", subnet.id),
         supabase.from("asset_networks").select("*", { count: "exact", head: true }).eq("network_id", subnet.id)
       ]);
-      setDeleteContext({ subnets: 0, vlans: vlanCount || 0, assets: assetCount || 0 });
-    } catch (err) {
+      setDeleteContext({ subnets: 0, vlans: vlanCount || 0, assets: assetCount || 0, interfaces: 0 });
+    } catch (err: unknown) {
       console.error("Failed to fetch delete context", err);
-      setDeleteContext({ subnets: 0, vlans: 0, assets: 0 });
+      setDeleteContext({ subnets: 0, vlans: 0, assets: 0, interfaces: 0 });
+    }
+  };
+
+  const handleDeleteVlan = async (vlan: Vlan) => {
+    setDeletingVlan(vlan);
+    setDeleteDialogOpen(true);
+    try {
+      const { count } = await supabase
+        .from("interfaces")
+        .select("*", { count: "exact", head: true })
+        .eq("vlan_id", vlan.id);
+      setDeleteContext({ subnets: 0, vlans: 0, assets: 0, interfaces: count || 0 });
+    } catch (err: unknown) {
+      console.error("Failed to fetch delete context", err);
+      setDeleteContext({ subnets: 0, vlans: 0, assets: 0, interfaces: 0 });
     }
   };
 
@@ -227,11 +248,16 @@ export default function Networks() {
         if (error) throw error;
         if (data?.length !== 1) throw new Error("Delete failed or not permitted");
         toast.success("Subnet deleted");
+      } else if (deletingVlan) {
+        const { data, error } = await supabase.from("vlans").delete().eq("id", deletingVlan.id).select();
+        if (error) throw error;
+        if (data?.length !== 1) throw new Error("Delete failed or not permitted");
+        toast.success("VLAN deleted");
       }
       setDeleteDialogOpen(false);
       fetchAll();
-    } catch (err: any) {
-      toast.error(err.message || "Delete failed");
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err));
     } finally {
       setDeleteLoading(false);
     }
@@ -567,6 +593,13 @@ export default function Networks() {
         {/* VLANs Tab */}
         <TabsContent value="vlans" className="mt-4">
           <Card>
+            <CardHeader className="flex flex-row items-center justify-between p-4 pb-0">
+              <CardTitle className="text-lg">VLANs</CardTitle>
+              <Button size="sm" onClick={() => setVlanModalOpen(true)} disabled={loading}>
+                <Plus className="h-4 w-4 mr-2" />
+                Add VLAN
+              </Button>
+            </CardHeader>
             <CardContent className="p-0">
               {vlansError && !loading && (
                 <div className="p-6 text-center">
@@ -580,45 +613,83 @@ export default function Networks() {
                 </div>
               )}
               {!vlansError && (
-                <Table>
-                  <TableHeader>
-                    <TableRow className="table-header">
-                      <TableHead>VLAN ID</TableHead>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Network</TableHead>
-                      <TableHead>Site</TableHead>
-                      <TableHead>Assets</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredVlans.map((vlan) => (
-                      <TableRow key={vlan.id} className="cursor-pointer hover:bg-muted/50">
-                        <TableCell>
-                          <Badge variant="outline" className="font-mono">
-                            VLAN {vlan.vlan_id}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div>
-                            <p className="font-medium">{vlan.name}</p>
-                            <p className="text-xs text-muted-foreground">{vlan.description}</p>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <span className="text-sm">{vlan.network}</span>
-                        </TableCell>
-                        <TableCell>
-                          <span className="text-sm text-muted-foreground">{vlan.site}</span>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="secondary" className="text-xs">
-                            {vlan.asset_count} assets
-                          </Badge>
-                        </TableCell>
+                sourceVlans.length === 0 && !loading ? (
+                  <div className="p-12 text-center">
+                    <Layers className="h-12 w-12 text-muted-foreground/50 mx-auto mb-4" />
+                    <p className="text-lg font-medium text-muted-foreground mb-2">No VLANs yet</p>
+                    <p className="text-sm text-muted-foreground mb-6">
+                      Add your first VLAN to organize network traffic and security.
+                    </p>
+                    <Button onClick={() => setVlanModalOpen(true)} disabled={loading}>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add your first VLAN
+                    </Button>
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="table-header">
+                        <TableHead>VLAN ID</TableHead>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Network</TableHead>
+                        <TableHead>Site</TableHead>
+                        <TableHead>Assets</TableHead>
+                        <TableHead className="w-[50px]"></TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredVlans.map((vlan) => (
+                        <TableRow key={vlan.id} className="cursor-pointer hover:bg-muted/50">
+                          <TableCell>
+                            <Badge variant="outline" className="font-mono">
+                              VLAN {vlan.vlan_id}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div>
+                              <p className="font-medium">{vlan.name}</p>
+                              <p className="text-xs text-muted-foreground">{vlan.description}</p>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <span className="text-sm">{vlan.network_id ? sourceNetworks.find(n => n.id === vlan.network_id)?.name : "None"}</span>
+                          </TableCell>
+                          <TableCell>
+                            <span className="text-sm text-muted-foreground">{vlan.site_id ? siteMap.get(vlan.site_id) : "None"}</span>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="secondary" className="text-xs">
+                              {vlan.site_id ? siteMap.get(vlan.site_id) : "None"} ({/* asset count from asset_networks */0}) assets</Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                                <Button variant="ghost" size="icon" className="h-8 w-8">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => { setEditingVlan(vlan); setVlanModalOpen(true); }}>
+                                  <Edit className="h-4 w-4 mr-2" />
+                                  Edit
+                                </DropdownMenuItem>
+                                {canDelete && (
+                                  <>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem className="text-destructive" onClick={() => handleDeleteVlan(vlan)}>
+                                      <Trash2 className="h-4 w-4 mr-2" />
+                                      Delete
+                                    </DropdownMenuItem>
+                                  </>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )
               )}
             </CardContent>
           </Card>
@@ -660,6 +731,15 @@ export default function Networks() {
         existingZones={uniqueZones}
         subnet={editingSubnet}
       />
+      <VlanFormModal
+        open={vlanModalOpen}
+        onOpenChange={(open) => {
+          setVlanModalOpen(open);
+          if (!open) setEditingVlan(null);
+        }}
+        onSaved={fetchAll}
+        vlan={editingVlan}
+      />
       <ConfirmDeleteDialog
         open={deleteDialogOpen}
         onOpenChange={(open) => {
@@ -667,19 +747,35 @@ export default function Networks() {
           if (!open) {
             setDeletingSite(null);
             setDeletingSubnet(null);
+            setDeletingVlan(null);
           }
         }}
-        title={`Delete ${deletingSite ? "Site" : "Subnet"}?`}
+        title={`Delete ${deletingSite ? "Site" : deletingSubnet ? "Subnet" : "VLAN"}?`}
         description={
           deletingSite ? (
             <>
               <p>Are you sure you want to delete site <strong>{deletingSite.name}</strong>?</p>
-              <p>{deleteContext.subnets} subnets and {deleteContext.vlans} VLANs use this site. They will not be deleted, but will become unassigned.</p>
+              <p>
+                {deleteContext.subnets} {deleteContext.subnets === 1 ? "subnet" : "subnets"} and{" "}
+                {deleteContext.vlans} {deleteContext.vlans === 1 ? "VLAN" : "VLANs"} use this site.
+                They will not be deleted, but will become unassigned.
+              </p>
             </>
           ) : deletingSubnet ? (
             <>
               <p>Are you sure you want to delete subnet <strong>{deletingSubnet.cidr}</strong>?</p>
-              <p>{deleteContext.vlans} VLANs use this subnet and will become unassigned. {deleteContext.assets} assets linked to it will be unlinked, not deleted.</p>
+              <p>
+                {deleteContext.vlans} {deleteContext.vlans === 1 ? "VLAN" : "VLANs"} use this subnet and will become unassigned.{" "}
+                {deleteContext.assets} {deleteContext.assets === 1 ? "asset" : "assets"} linked to it will be unlinked, not deleted.
+              </p>
+            </>
+          ) : deletingVlan ? (
+            <>
+              <p>Are you sure you want to delete VLAN <strong>{deletingVlan.name} (VLAN {deletingVlan.vlan_id})</strong>?</p>
+              <p>
+                {deleteContext.interfaces} {deleteContext.interfaces === 1 ? "interface" : "interfaces"} use this VLAN.
+                They will not be deleted, but will become unassigned.
+              </p>
             </>
           ) : null
         }
