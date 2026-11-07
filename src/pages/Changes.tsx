@@ -59,6 +59,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { useWorkspace } from "@/hooks/useWorkspace";
 import { useAuth } from "@/hooks/useAuth";
 import ChangeFormModal from "@/components/modals/ChangeFormModal";
+import ConfirmDeleteDialog from "@/components/modals/ConfirmDeleteDialog";
+import { getErrorMessage } from "@/lib/errors";
+import { Trash2 } from "lucide-react";
 
 type ChangeType = "Firewall" | "ACL" | "Routing" | "VPN" | "Switch" | "DNS";
 type ChangeStatus = "Draft" | "Review" | "Approved" | "Implemented" | "Verified" | "Closed";
@@ -145,8 +148,11 @@ export default function Changes() {
   const [changeModalOpen, setChangeModalOpen] = useState(false);
   const [sendBackReason, setSendBackReason] = useState("");
   const [showSendBackDialog, setShowSendBackDialog] = useState(false);
-  const { activeWorkspace } = useWorkspace();
+  const { activeWorkspace, canDelete } = useWorkspace();
   const { user } = useAuth();
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [changeToDelete, setChangeToDelete] = useState<Change | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const [changes, setChanges] = useState<any[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -240,6 +246,40 @@ export default function Changes() {
       setSendBackReason('');
       setShowSendBackDialog(false);
     }
+  };
+
+  const handleDelete = async () => {
+    if (!changeToDelete) return;
+    setDeleting(true);
+    try {
+      const { data, error } = await supabase
+        .from('changes')
+        .delete()
+        .eq('id', changeToDelete.id)
+        .select();
+      if (error) {
+        toast.error(getErrorMessage(error));
+        return;
+      }
+      if (!data || data.length !== 1) {
+        toast.error('Delete failed or not permitted');
+        return;
+      }
+      toast.success('Change deleted');
+      setChangeToDelete(null);
+      setDeleteDialogOpen(false);
+      setDetailOpen(false);
+      await fetchChanges();
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const openDeleteDialog = (change: Change) => {
+    setChangeToDelete(change);
+    setDeleteDialogOpen(true);
   };
 
   const sourceChanges = changes === null ? [] : changes;
@@ -747,6 +787,15 @@ export default function Changes() {
           )}
         </Button>
       )}
+      {canDelete && (
+        <Button
+          variant="destructive"
+          onClick={() => openDeleteDialog(selectedChange)}
+        >
+          <Trash2 className="h-4 w-4 mr-2" />
+          Delete
+        </Button>
+      )}
       </div>
       </div>
       </>
@@ -786,6 +835,22 @@ export default function Changes() {
     )}
 
     <ChangeFormModal open={changeModalOpen} onOpenChange={setChangeModalOpen} onSaved={fetchChanges} />
+
+    <ConfirmDeleteDialog
+      open={deleteDialogOpen}
+      onOpenChange={(open) => {
+        setDeleteDialogOpen(open);
+        if (!open) setChangeToDelete(null);
+      }}
+      title="Delete Change Request?"
+      description={
+        changeToDelete
+          ? `This permanently deletes change ${changeToDelete.change_number} and its timeline. Nothing else is deleted.`
+          : "This permanently deletes the change request and its timeline. Nothing else is deleted."
+      }
+      loading={deleting}
+      onConfirm={handleDelete}
+    />
     </div>
   );
 }
