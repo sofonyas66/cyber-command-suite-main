@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
+import { getErrorMessage } from "@/lib/errors";
 
 import { supabase } from "@/integrations/supabase/client";
 import { useWorkspace } from "@/hooks/useWorkspace";
@@ -100,8 +101,15 @@ export default function AssetFormModal({ open, onOpenChange, asset = null, onSav
       };
 
       if (asset && asset.id) {
-        const { error } = await supabase.from('assets').update(payload).eq('id', asset.id);
-        if (error) throw error;
+        const { data, error } = await supabase.from('assets').update(payload).eq('id', asset.id).select().single();
+        if (error) {
+          toast.error(getErrorMessage(error));
+          return;
+        }
+        if (!data) {
+          toast.error('Delete failed or not permitted');
+          return;
+        }
         toast.success('Asset updated');
       } else {
         if (!user) {
@@ -123,9 +131,9 @@ export default function AssetFormModal({ open, onOpenChange, asset = null, onSav
 
       onOpenChange(false);
       onSaved && onSaved();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Asset save failed', err);
-      toast.error(err.message || String(err));
+      toast.error(getErrorMessage(err));
     } finally {
       setLoading(false);
     }
