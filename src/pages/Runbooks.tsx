@@ -4,6 +4,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Search,
   Plus,
   BookOpen,
@@ -14,23 +21,43 @@ import {
   CheckCircle2,
   Terminal,
   Clock,
+  MoreHorizontal,
+  Edit,
+  Trash2,
 } from "lucide-react";
-import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useWorkspace } from "@/hooks/useWorkspace";
 import { useAuth } from "@/hooks/useAuth";
 import RunbookFormModal from "@/components/modals/RunbookFormModal";
+import ConfirmDeleteDialog from "@/components/modals/ConfirmDeleteDialog";
+import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/errors";
 
+interface Runbook {
+  id: string;
+  title: string;
+  category: string | null;
+  description: string | null;
+  steps: Array<{ id: string; text: string; completed: boolean }>;
+  commands: Array<{ label: string; cmd: string }>;
+  tags: string[];
+  use_count: number;
+}
 
 export default function Runbooks() {
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>("1");
   const [stepStates, setStepStates] = useState<Record<string, Record<string, boolean>>>({});
-  const { activeWorkspace } = useWorkspace();
+  const { activeWorkspace, canDelete } = useWorkspace();
+  const { user, loading: authLoading } = useAuth();
 
-  const [runbooks, setRunbooks] = useState<any[] | null>(null);
+  const [runbooks, setRunbooks] = useState<Runbook[] | null>(null);
   const [runbookModalOpen, setRunbookModalOpen] = useState(false);
+  const [editingRunbook, setEditingRunbook] = useState<Runbook | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [runbookToDelete, setRunbookToDelete] = useState<Runbook | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -42,7 +69,7 @@ export default function Runbooks() {
       if (activeWorkspace?.id) q = q.eq('workspace_id', activeWorkspace.id as any);
       const { data, error } = await q;
       if (error) throw error;
-      setRunbooks(data || []);
+      setRunbooks(data as unknown as Runbook[] || []);
     } catch (err: any) {
       console.error('Failed to load runbooks', err);
       setError(err.message || String(err));
@@ -62,7 +89,7 @@ export default function Runbooks() {
     (runbook) =>
       runbook.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (runbook.category || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (runbook.tags || []).some((tag: string) => tag.includes(searchQuery.toLowerCase()))
+      (runbook.tags || []).some((tag) => tag.includes(searchQuery.toLowerCase()))
   );
 
   const copyCommand = (cmd: string) => {
@@ -85,6 +112,48 @@ export default function Runbooks() {
     return Object.values(runbookSteps).filter(Boolean).length;
   };
 
+  const handleEdit = (runbook: Runbook) => {
+    setEditingRunbook(runbook);
+    if (authLoading) return;
+    setRunbookModalOpen(true);
+  };
+
+  const handleDeleteClick = (runbook: Runbook) => {
+    setRunbookToDelete(runbook);
+    setDeleteDialogOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!runbookToDelete) return;
+    setDeleting(true);
+    try {
+      const { data, error } = await supabase
+        .from("runbooks")
+        .delete()
+        .eq("id", runbookToDelete.id)
+        .select();
+
+      if (error) {
+        toast.error(getErrorMessage(error));
+        return;
+      }
+
+      if (!data || data.length !== 1) {
+        toast.error("Delete failed or not permitted");
+        return;
+      }
+
+      toast.success("Runbook deleted");
+      setRunbookToDelete(null);
+      setDeleteDialogOpen(false);
+      fetchRunbooks();
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -99,7 +168,15 @@ export default function Runbooks() {
         </Button>
       </div>
 
-      <RunbookFormModal open={runbookModalOpen} onOpenChange={setRunbookModalOpen} onSaved={fetchRunbooks} />
+      <RunbookFormModal
+        open={runbookModalOpen}
+        onOpenChange={(open) => {
+          setRunbookModalOpen(open);
+          if (!open) setEditingRunbook(null);
+        }}
+        onSaved={fetchRunbooks}
+        runbook={editingRunbook}
+      />
 
       {/* Search */}
       <div className="relative max-w-md">
@@ -154,6 +231,34 @@ export default function Runbooks() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                      <Button variant="ghost" size="icon" className="h-8 w-8">
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => handleEdit(runbook)}>
+                        <Edit className="h-4 w-4 mr-2" />
+                        Edit
+                      </DropdownMenuItem>
+                      {canDelete && (
+                        <>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            className="text-destructive"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteClick(runbook);
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            Delete
+                          </DropdownMenuItem>
+                        </>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                   {completedSteps > 0 && (
                     <Badge variant="secondary" className="text-xs">
                       {completedSteps}/{runbook.steps.length}
@@ -244,7 +349,10 @@ export default function Runbooks() {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => copyCommand(cmd.cmd)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  copyCommand(cmd.cmd);
+                                }}
                                 className="flex-shrink-0"
                               >
                                 <Copy className="h-4 w-4" />
@@ -278,6 +386,19 @@ export default function Runbooks() {
           </Card>
         )}
       </div>
+
+      {/* Confirm Delete Dialog */}
+      <ConfirmDeleteDialog
+        open={deleteDialogOpen}
+        onOpenChange={(open) => {
+          setDeleteDialogOpen(open);
+          if (!open) setRunbookToDelete(null);
+        }}
+        title="Delete Runbook?"
+        description="This permanently deletes the runbook. Nothing else is deleted."
+        loading={deleting}
+        onConfirm={confirmDelete}
+      />
     </div>
   );
 }
