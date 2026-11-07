@@ -1,4 +1,4 @@
-import { Check, ChevronsUpDown, Building2, Plus, Shield, Eye, Users, Crown } from "lucide-react";
+import { Check, ChevronsUpDown, Building2, Shield, Eye, Users, Crown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -101,20 +101,7 @@ export function WorkspaceSwitcher() {
                 </CommandItem>
               ))}
             </CommandGroup>
-            <CommandSeparator />
-            <CommandGroup>
-              <CommandItem
-                onSelect={() => {
-                  setOpen(false);
-                  // Placeholder for create workspace modal - will be implemented
-                  alert('Create workspace modal not yet implemented');
-                }}
-                className="text-muted-foreground"
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                Create Workspace
-              </CommandItem>
-            </CommandGroup>
+
           </CommandList>
         </Command>
       </PopoverContent>
