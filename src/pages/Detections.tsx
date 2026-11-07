@@ -15,6 +15,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -39,10 +40,12 @@ import {
   Copy,
 } from "lucide-react";
 import DetectionFormModal from "@/components/modals/DetectionFormModal";
+import ConfirmDeleteDialog from "@/components/modals/ConfirmDeleteDialog";
 import DetectionDetailPanel from "@/components/panels/DetectionDetailPanel";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useWorkspace } from "@/hooks/useWorkspace";
+import { getErrorMessage } from "@/lib/errors";
 
 interface Detection {
   id: string;
@@ -60,7 +63,7 @@ interface Detection {
   false_positive_rate: number;
 }
 
-const []: Detection[] = [
+const DEMO_DETECTIONS: Detection[] = [
   {
     id: "1",
     name: "Suspicious PowerShell Execution",
@@ -172,11 +175,14 @@ export default function Detections() {
   const [severityFilter, setSeverityFilter] = useState("all");
   const [selectedDetection, setSelectedDetection] = useState<Detection | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
-  const { activeWorkspace } = useWorkspace();
 
   const [detections, setDetections] = useState<Detection[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [detectionToEdit, setDetectionToEdit] = useState<Detection | null>(null);
+  const [detectionToDelete, setDetectionToDelete] = useState<Detection | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const { activeWorkspace, canDelete } = useWorkspace();
 
   const fetchDetections = async () => {
     setLoading(true);
@@ -245,6 +251,34 @@ export default function Detections() {
       console.error('Failed to update detection', err);
       setDetections(prev);
       toast.error('Failed to update detection');
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!detectionToDelete) return;
+    setDeleting(true);
+    try {
+      const { data, error } = await supabase
+        .from("detections")
+        .delete()
+        .eq("id", detectionToDelete.id)
+        .select();
+
+      if (error) {
+        toast.error(getErrorMessage(error));
+        return;
+      }
+      if (!data || data.length !== 1) {
+        toast.error("Delete failed or not permitted");
+        return;
+      }
+      toast.success("Detection deleted");
+      setDetectionToDelete(null);
+      fetchDetections();
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -480,14 +514,25 @@ export default function Detections() {
                           <Copy className="h-4 w-4 mr-2" />
                           Copy Query
                         </DropdownMenuItem>
-                        <DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => {
+                            setDetectionToEdit(detection);
+                            setIsFormOpen(true);
+                          }}
+                        >
                           <Pencil className="h-4 w-4 mr-2" />
                           Edit
                         </DropdownMenuItem>
-                        <DropdownMenuItem className="text-destructive">
-                          <Trash2 className="h-4 w-4 mr-2" />
-                          Delete
-                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        {canDelete && (
+                          <DropdownMenuItem
+                            className="text-destructive"
+                            onClick={() => setDetectionToDelete(detection)}
+                          >
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            Delete
+                          </DropdownMenuItem>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>
@@ -520,7 +565,27 @@ export default function Detections() {
       />
 
       {/* Form Modal */}
-      <DetectionFormModal open={isFormOpen} onOpenChange={setIsFormOpen} onSaved={fetchDetections} />
+      <DetectionFormModal
+        open={isFormOpen}
+        onOpenChange={(open) => {
+          setIsFormOpen(open);
+          if (!open) setDetectionToEdit(null);
+        }}
+        detection={detectionToEdit}
+        onSaved={fetchDetections}
+      />
+
+      {/* Confirm Delete Dialog */}
+      <ConfirmDeleteDialog
+        open={!!detectionToDelete}
+        onOpenChange={(open) => {
+          if (!open) setDetectionToDelete(null);
+        }}
+        title="Delete Detection"
+        description="This permanently deletes the detection. Nothing else is deleted."
+        loading={deleting}
+        onConfirm={confirmDelete}
+      />
     </div>
   );
 }

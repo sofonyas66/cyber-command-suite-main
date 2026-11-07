@@ -16,25 +16,43 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useWorkspace } from "@/hooks/useWorkspace";
+import { getErrorMessage } from "@/lib/errors";
+
+interface Detection {
+  id: string;
+  name: string;
+  platform: string;
+  query_text: string | null;
+  schedule: string | null;
+  enabled: boolean;
+  severity: string;
+  mitre_techniques: string[];
+  data_sources: string[];
+  owner: string | null;
+  notes: string | null;
+}
 
 interface DetectionFormModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSaved?: () => void;
+  detection?: Detection | null;
 }
 
 export default function DetectionFormModal({
   open,
   onOpenChange,
   onSaved,
+  detection = null,
 }: DetectionFormModalProps) {
   const { user } = useAuth();
   const { activeWorkspace } = useWorkspace();
+  const isEditMode = !!detection;
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
@@ -49,21 +67,53 @@ export default function DetectionFormModal({
     notes: "",
   });
 
+  useEffect(() => {
+    if (detection) {
+      setFormData({
+        name: detection.name || "",
+        platform: detection.platform || "Splunk",
+        query_text: detection.query_text || "",
+        schedule: detection.schedule || "*/5 * * * *",
+        enabled: detection.enabled ?? true,
+        severity: detection.severity || "medium",
+        mitre_techniques: Array.isArray(detection.mitre_techniques)
+          ? detection.mitre_techniques.join(", ")
+          : "",
+        data_sources: Array.isArray(detection.data_sources)
+          ? detection.data_sources.join(", ")
+          : "",
+        owner: detection.owner || "",
+        notes: detection.notes || "",
+      });
+    } else {
+      setFormData({
+        name: "",
+        platform: "Splunk",
+        query_text: "",
+        schedule: "*/5 * * * *",
+        enabled: true,
+        severity: "medium",
+        mitre_techniques: "",
+        data_sources: "",
+        owner: "",
+        notes: "",
+      });
+    }
+  }, [detection, open]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) {
+    if (!isEditMode && !user) {
       toast.error("Sign in to create detections");
       return;
     }
-    if (!activeWorkspace?.id) {
+    if (!isEditMode && !activeWorkspace?.id) {
       toast.error("No workspace selected");
       return;
     }
     setLoading(true);
     try {
       const payload: any = {
-        user_id: user.id,
-        workspace_id: activeWorkspace.id,
         name: formData.name,
         platform: formData.platform,
         query_text: formData.query_text || null,
@@ -86,31 +136,45 @@ export default function DetectionFormModal({
         notes: formData.notes || null,
         tags: [],
       };
-      const { data, error } = await supabase
-        .from("detections")
-        .insert([payload])
-        .select()
-        .single();
+
+      let result;
+      if (isEditMode && detection?.id) {
+        result = await supabase.from("detections").update(payload).eq("id", detection.id).select().single();
+      } else {
+        payload.user_id = user!.id;
+        payload.workspace_id = activeWorkspace!.id;
+        result = await supabase.from("detections").insert([payload]).select().single();
+      }
+
+      const { data, error } = result;
       if (error) throw error;
-      if (!data) throw new Error("Insert returned no row");
-      toast.success("Detection created");
+      if (!data) {
+        throw new Error(isEditMode ? "Update failed or not permitted" : "Insert returned no row");
+      }
+      toast.success(isEditMode ? "Detection updated" : "Detection created");
       onOpenChange(false);
-      setFormData({
-        name: "",
-        platform: "Splunk",
-        query_text: "",
-        schedule: "*/5 * * * *",
-        enabled: true,
-        severity: "medium",
-        mitre_techniques: "",
-        data_sources: "",
-        owner: "",
-        notes: "",
-      });
+      if (!isEditMode) {
+        setFormData({
+          name: "",
+          platform: "Splunk",
+          query_text: "",
+          schedule: "*/5 * * * *",
+          enabled: true,
+          severity: "medium",
+          mitre_techniques: "",
+          data_sources: "",
+          owner: "",
+          notes: "",
+        });
+      }
       onSaved?.();
-    } catch (err: any) {
-      console.error("Create detection failed", err);
-      toast.error(err.message || String(err));
+    } catch (err: unknown) {
+      console.error(isEditMode ? "Update detection failed" : "Create detection failed", err);
+      if (isEditMode) {
+        toast.error(getErrorMessage(err));
+      } else {
+        toast.error(err instanceof Error ? err.message : String(err));
+      }
     } finally {
       setLoading(false);
     }
@@ -120,7 +184,7 @@ export default function DetectionFormModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Add Detection Rule</DialogTitle>
+          <DialogTitle>{isEditMode ? "Edit Detection" : "Add Detection Rule"}</DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4 mt-4">
@@ -280,7 +344,7 @@ export default function DetectionFormModal({
                 Cancel
               </Button>
               <Button type="submit" disabled={loading}>
-                {loading ? "Saving..." : "Create Detection"}
+                {loading ? "Saving..." : isEditMode ? "Save Detection" : "Create Detection"}
               </Button>
             </div>
           </div>
