@@ -46,9 +46,11 @@ import {
 import { format } from "date-fns";
 import AssetDetailPanel from "@/components/panels/AssetDetailPanel";
 import AssetFormModal from "@/components/modals/AssetFormModal";
+import ConfirmDeleteDialog from "@/components/modals/ConfirmDeleteDialog";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useWorkspace } from "@/hooks/useWorkspace";
+import { getErrorMessage } from "@/lib/errors";
 
 // Demo data
 
@@ -105,9 +107,12 @@ export default function Assets() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [editingAsset, setEditingAsset] = useState<any | null>(null);
+  const [assetToDelete, setAssetToDelete] = useState<any | null>(null);
+  const [deleteCounts, setDeleteCounts] = useState<any | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const navigate = useNavigate();
 
-  const { activeWorkspace } = useWorkspace();
+  const { activeWorkspace, canDelete } = useWorkspace();
 
   const [assets, setAssets] = useState<any[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -134,6 +139,72 @@ export default function Assets() {
   useEffect(() => {
     fetchAssets();
   }, [activeWorkspace?.id]);
+
+  const handleDeleteClick = async (asset: any) => {
+    setAssetToDelete(asset);
+    setDeleteCounts(null);
+    try {
+      const [
+        { count: subnetsCount, error: e1 },
+        { count: vulnCount, error: e2 },
+        { count: incidentCount, error: e3 },
+        { count: interfacesCount, error: e4 },
+        { count: portsServicesCount, error: e5 },
+      ] = await Promise.all([
+        supabase.from("asset_networks").select("*", { count: "exact", head: true }).eq("asset_id", asset.id),
+        supabase.from("vuln_assets").select("*", { count: "exact", head: true }).eq("asset_id", asset.id),
+        supabase.from("incident_assets").select("*", { count: "exact", head: true }).eq("asset_id", asset.id),
+        supabase.from("interfaces").select("*", { count: "exact", head: true }).eq("asset_id", asset.id),
+        supabase.from("ports_services").select("*", { count: "exact", head: true }).eq("asset_id", asset.id),
+      ]);
+
+      if (e1 || e2 || e3 || e4 || e5) {
+        setDeleteCounts(null);
+      } else {
+        setDeleteCounts({
+          subnets: subnetsCount ?? 0,
+          vulnerabilities: vulnCount ?? 0,
+          incidents: incidentCount ?? 0,
+          interfaces: interfacesCount ?? 0,
+          portsServices: portsServicesCount ?? 0,
+        });
+      }
+    } catch (err: unknown) {
+      console.error("Failed to fetch asset delete context counts", err);
+      setDeleteCounts(null);
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!assetToDelete) return;
+    setDeleting(true);
+    try {
+      const { data, error } = await supabase
+        .from("assets")
+        .delete()
+        .eq("id", assetToDelete.id)
+        .select();
+
+      if (error) {
+        toast.error(getErrorMessage(error));
+        return;
+      }
+
+      if (!data || data.length !== 1) {
+        toast.error("Delete failed or not permitted");
+        return;
+      }
+
+      toast.success("Asset deleted");
+      setAssetToDelete(null);
+      setDeleteCounts(null);
+      fetchAssets();
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   // Use [] only before the first fetch (assets === null).
   // If `assets` is an empty array after a fetch, show the empty state instead
@@ -365,24 +436,21 @@ export default function Assets() {
                                     <Edit className="h-4 w-4 mr-2" />
                                     Edit
                                   </DropdownMenuItem>
-                                  <DropdownMenuSeparator />
-                                  <DropdownMenuItem className="text-destructive" onClick={async (e) => {
-                                    e.stopPropagation();
-                                    const ok = window.confirm('Delete asset "' + asset.hostname + '"?');
-                                    if (!ok) return;
-                                    try {
-                                      const { error } = await supabase.from('assets').delete().eq('id', asset.id);
-                                      if (error) throw error;
-                                      toast.success('Asset deleted');
-                                      fetchAssets();
-                                    } catch (err: any) {
-                                      console.error('Failed to delete asset', err);
-                                      toast.error(err.message || String(err));
-                                    }
-                                  }}>
-                                    <Trash2 className="h-4 w-4 mr-2" />
-                                    Delete
-                                  </DropdownMenuItem>
+                                  {canDelete && (
+                                    <>
+                                      <DropdownMenuSeparator />
+                                      <DropdownMenuItem
+                                        className="text-destructive"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleDeleteClick(asset);
+                                        }}
+                                      >
+                                        <Trash2 className="h-4 w-4 mr-2" />
+                                        Delete
+                                      </DropdownMenuItem>
+                                    </>
+                                  )}
                                 </DropdownMenuContent>
                           </DropdownMenu>
                         </TableCell>
@@ -417,6 +485,27 @@ export default function Assets() {
         }}
         asset={editingAsset}
         onSaved={() => fetchAssets()}
+      />
+
+      {/* Confirm Delete Dialog */}
+      <ConfirmDeleteDialog
+        open={!!assetToDelete}
+        onOpenChange={(open) => {
+          if (!open) {
+            setAssetToDelete(null);
+            setDeleteCounts(null);
+          }
+        }}
+        title={`Delete Asset "${assetToDelete?.hostname || ""}"?`}
+        description={
+          deleteCounts ? (
+            `This asset is linked to ${deleteCounts.subnets} ${deleteCounts.subnets === 1 ? "subnet" : "subnets"}, ${deleteCounts.vulnerabilities} ${deleteCounts.vulnerabilities === 1 ? "vulnerability" : "vulnerabilities"} and ${deleteCounts.incidents} ${deleteCounts.incidents === 1 ? "incident" : "incidents"}, and has ${deleteCounts.interfaces} ${deleteCounts.interfaces === 1 ? "interface" : "interfaces"} and ${deleteCounts.portsServices} ${deleteCounts.portsServices === 1 ? "port/service" : "ports/services"}. Those links and records will be removed. The vulnerabilities, incidents and subnets themselves are not deleted.`
+          ) : (
+            `Are you sure you want to delete asset "${assetToDelete?.hostname || ""}"? Associated links and records will be removed.`
+          )
+        }
+        loading={deleting}
+        onConfirm={confirmDelete}
       />
     </div>
   );
