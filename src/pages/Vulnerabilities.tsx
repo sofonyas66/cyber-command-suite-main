@@ -33,10 +33,21 @@ import {
   Clock,
   ExternalLink,
   RefreshCw,
+  MoreVertical,
+  Trash2,
 } from "lucide-react";
 import { differenceInDays } from "date-fns";
 import { VulnImportWizard } from "@/components/modals/VulnImportWizard";
-
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import ConfirmDeleteDialog from "@/components/modals/ConfirmDeleteDialog";
+import { getErrorMessage } from "@/lib/errors";
+import { Database } from "@/integrations/supabase/types";
 
 const getSeverityBadge = (severity: string) => {
   const styles: Record<string, string> = {
@@ -61,6 +72,19 @@ const getStatusBadge = (status: string) => {
   return config[status] || config.new;
 };
 
+interface Vulnerability {
+  id: string;
+  title: string;
+  cve_id: string | null;
+  cvss_score: number | null;
+  severity: Database["public"]["Enums"]["vuln_severity"];
+  status: Database["public"]["Enums"]["vuln_status"];
+  description: string | null;
+  created_at: string | null;
+  sla_due_date: string | null;
+  source: string | null;
+}
+
 export default function Vulnerabilities() {
   const [searchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState("");
@@ -70,10 +94,14 @@ export default function Vulnerabilities() {
   const [createOpen, setCreateOpen] = useState(false);
   const [createForAsset, setCreateForAsset] = useState<string | null>(null);
   const [focusedVulnId, setFocusedVulnId] = useState<string | null>(null);
-  const { activeWorkspace } = useWorkspace();
-
-  const [vulnerabilities, setVulnerabilities] = useState<any[] | null>(null);
+  const [editVuln, setEditVuln] = useState<Database["public"]["Tables"]["vulnerabilities"]["Row"] | null>(null);
+  const [deleteVuln, setDeleteVuln] = useState<Vulnerability | null>(null);
+  const [deleteCounts, setDeleteCounts] = useState<number | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [vulnsLoading, setVulnsLoading] = useState(false);
+  const { activeWorkspace, canDelete } = useWorkspace();
+
+  const [vulnerabilities, setVulnerabilities] = useState<Vulnerability[] | null>(null);
   const [vulnsError, setVulnsError] = useState<string | null>(null);
 
   const fetchVulns = async () => {
@@ -82,17 +110,17 @@ export default function Vulnerabilities() {
     try {
       let q = supabase
         .from('vulnerabilities')
-        .select('id, title, cve_id, cvss_score, severity, status, created_at, sla_due_date, source')
+        .select('id, title, cve_id, cvss_score, severity, status, description, created_at, sla_due_date, source')
         .order('created_at', { ascending: false })
         .limit(1000);
-      if (activeWorkspace?.id) q = q.eq('workspace_id', activeWorkspace.id as any);
+      if (activeWorkspace?.id) q = q.eq('workspace_id', activeWorkspace.id);
       const { data, error } = await q;
       if (error) throw error;
       setVulnerabilities(data || []);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to load vulnerabilities', err);
-      setVulnsError(err.message || String(err));
-      toast.error(`Failed to load vulnerabilities: ${err.message || String(err)}`);
+      setVulnsError(err instanceof Error ? err.message : String(err));
+      toast.error(`Failed to load vulnerabilities: ${err instanceof Error ? err.message : String(err)}`);
       setVulnerabilities([]);
     } finally {
       setVulnsLoading(false);
@@ -110,6 +138,47 @@ export default function Vulnerabilities() {
     // initial load
     fetchVulns();
   }, [searchParams, activeWorkspace?.id]);
+
+  const handleDelete = async () => {
+    if (!deleteVuln) return;
+
+    setDeleting(true);
+    try {
+      // Fetch vuln_assets count
+      const { count: vulnAssetsCount, error: countErr } = await supabase
+        .from('vuln_assets')
+        .select('*', { count: 'exact', head: true })
+        .eq('vulnerability_id', deleteVuln.id);
+
+      if (countErr) {
+        setDeleteCounts(null);
+      } else {
+        setDeleteCounts(vulnAssetsCount);
+      }
+
+      const { data, error } = await supabase
+        .from('vulnerabilities')
+        .delete()
+        .eq('id', deleteVuln.id)
+        .select()
+        .single();
+
+      if (error) throw error;
+      if (!data) {
+        toast.error("Delete failed or not permitted");
+        return;
+      }
+
+      toast.success('Vulnerability deleted');
+      setDeleteVuln(null);
+      fetchVulns();
+    } catch (err: unknown) {
+      console.error('Delete vuln failed', err);
+      toast.error(getErrorMessage(err) || "Delete failed or not permitted");
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const sourceVulns = vulnerabilities === null ? [] : vulnerabilities || [];
 
@@ -142,7 +211,7 @@ export default function Vulnerabilities() {
             <Upload className="h-4 w-4 mr-2" />
             Import CSV
           </Button>
-          <Button size="sm" onClick={() => { setCreateForAsset(null); setCreateOpen(true); }}>
+          <Button size="sm" onClick={() => { setCreateForAsset(null); setEditVuln(null); setCreateOpen(true); }}>
             <Plus className="h-4 w-4 mr-2" />
             Add Finding
           </Button>
@@ -207,6 +276,9 @@ export default function Vulnerabilities() {
 
       {/* Filters */}
       <Card>
+        <CardHeader>
+          <CardTitle>Filters</CardTitle>
+        </CardHeader>
         <CardContent className="p-4">
           <div className="flex flex-col sm:flex-row gap-3">
             <div className="relative flex-1">
@@ -241,123 +313,177 @@ export default function Vulnerabilities() {
                 <SelectItem value="in_progress">In Progress</SelectItem>
                 <SelectItem value="mitigated">Mitigated</SelectItem>
                 <SelectItem value="accepted">Accepted</SelectItem>
+                <SelectItem value="false_positive">False Positive</SelectItem>
               </SelectContent>
             </Select>
+            {canDelete && (
+              <Button variant="ghost" size="sm" onClick={() => toast.info("Bulk delete not implemented")}>
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Refresh
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
 
-      {/* Table */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-lg">
-            {filteredVulns.length} Vulnerabilit{filteredVulns.length !== 1 ? "ies" : "y"}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          {vulnsError && !vulnsLoading && (
-            <div className="p-6 text-center">
-              <AlertTriangle className="h-10 w-10 text-destructive mx-auto mb-3" />
-              <p className="text-destructive font-medium mb-2">Failed to load vulnerabilities</p>
-              <p className="text-sm text-muted-foreground mb-4">{vulnsError}</p>
-              <Button onClick={fetchVulns} variant="outline">
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Retry
-              </Button>
-            </div>
-          )}
-          {!vulnsError && (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="table-header">
-                    <TableHead className="w-[300px]">Vulnerability</TableHead>
-                    <TableHead>CVSS</TableHead>
-                    <TableHead>Severity</TableHead>
-                    <TableHead>Status</TableHead>
-                    {/* TODO: Assets column removed for now; asset counts must come from a count of vuln_assets join table (follow-up) */}
-                    <TableHead>SLA Due</TableHead>
-                    <TableHead>Source</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredVulns.map((vuln) => {
-                    const statusConfig = getStatusBadge(vuln.status);
-                    const StatusIcon = statusConfig.icon;
-                    const parsedDueDate = vuln.sla_due_date ? new Date(vuln.sla_due_date) : null;
-                    const daysUntilDue = parsedDueDate && !isNaN(parsedDueDate.getTime())
-                      ? differenceInDays(parsedDueDate, new Date())
-                      : null;
+      {vulnsError && (
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-destructive">{vulnsError}</p>
+          </CardContent>
+        </Card>
+      )}
 
-                    const isFocused = focusedVulnId === String(vuln.id);
-                    return (
-                      <TableRow key={vuln.id} className={"cursor-pointer " + (isFocused ? 'ring-2 ring-primary/40 bg-primary/5' : 'hover:bg-muted/50')}>
-                        <TableCell>
-                          <div>
-                            <p className="font-medium">{vuln.title}</p>
-                            {vuln.cve_id && (
-                              <a
-                                href={`https://nvd.nist.gov/vuln/detail/${vuln.cve_id}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-xs text-primary hover:underline flex items-center gap-1"
-                                onClick={(e) => e.stopPropagation()}
+      {!vulnsError && (
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow className="table-header">
+                <TableHead className="w-[300px]">Vulnerability</TableHead>
+                <TableHead>CVSS</TableHead>
+                <TableHead>Severity</TableHead>
+                <TableHead>Status</TableHead>
+                {/* TODO: affected_assets count from vuln_assets join table (follow-up) */}
+                <TableHead>SLA Due</TableHead>
+                <TableHead>Source</TableHead>
+                <TableHead className="w-[50px]"></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredVulns.map((vuln) => {
+                const statusConfig = getStatusBadge(vuln.status);
+                const StatusIcon = statusConfig.icon;
+                const parsedDueDate = vuln.sla_due_date ? new Date(vuln.sla_due_date) : null;
+                const daysUntilDue = parsedDueDate && !isNaN(parsedDueDate.getTime())
+                  ? differenceInDays(parsedDueDate, new Date())
+                  : null;
+
+                const isFocused = focusedVulnId === String(vuln.id);
+                return (
+                  <TableRow key={vuln.id} className={"cursor-pointer " + (isFocused ? 'ring-2 ring-primary/40 bg-primary/5' : 'hover:bg-muted/50')}>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <div>
+                        <p className="font-medium">{vuln.title}</p>
+                        {vuln.cve_id && (
+                          <a
+                            href={`https://nvd.nist.gov/vuln/detail/${vuln.cve_id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-primary hover:underline flex items-center gap-1"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {vuln.cve_id}
+                            <ExternalLink className="h-3 w-3" />
+                          </a>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <span className="font-mono font-medium">
+                        {vuln.cvss_score != null ? vuln.cvss_score.toFixed(1) : "—"}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className={`text-xs ${getSeverityBadge(vuln.severity)}`}>
+                        {vuln.severity}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className={`text-xs ${statusConfig.color}`}>
+                        <StatusIcon className="h-3 w-3 mr-1" />
+                        {vuln.status.replace("_", " ")}
+                      </Badge>
+                    </TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      {daysUntilDue !== null ? (
+                        <span
+                          className={`text-sm ${
+                            daysUntilDue < 0
+                              ? "text-destructive font-medium"
+                              : daysUntilDue <= 3
+                              ? "text-warning"
+                              : "text-muted-foreground"
+                          }`}
+                        >
+                          {daysUntilDue < 0
+                            ? `${Math.abs(daysUntilDue)}d overdue`
+                            : daysUntilDue === 0
+                            ? "Today"
+                            : `${daysUntilDue}d`}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground text-sm">-</span>
+                      )}
+                    </TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <span className="text-muted-foreground text-sm">{vuln.source || "—"}</span>
+                    </TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                            <MoreVertical className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onSelect={async () => {
+                              const { data, error } = await supabase.from('vulnerabilities').select('*').eq('id', vuln.id).maybeSingle();
+                              if (error || !data) {
+                                toast.error(getErrorMessage(error) || 'Failed to load vulnerability');
+                                return;
+                              }
+                              setEditVuln(data);
+                              setCreateOpen(true);
+                            }}>
+                            Edit
+                          </DropdownMenuItem>
+                          {canDelete && (
+                            <>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                className="text-destructive"
+                                onSelect={async () => {
+                                  setDeleteVuln(vuln);
+                                }}
                               >
-                                {vuln.cve_id}
-                                <ExternalLink className="h-3 w-3" />
-                              </a>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <span className="font-mono font-medium">
-                            {vuln.cvss_score != null ? vuln.cvss_score.toFixed(1) : "—"}
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className={`text-xs ${getSeverityBadge(vuln.severity)}`}>
-                            {vuln.severity}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className={`text-xs ${statusConfig.color}`}>
-                            <StatusIcon className="h-3 w-3 mr-1" />
-                            {vuln.status.replace("_", " ")}
-                          </Badge>
-                        </TableCell>
-                        {/* TODO: affected_assets count from vuln_assets join table (follow-up) */}
-                        <TableCell>
-                          {daysUntilDue !== null ? (
-                            <span
-                              className={`text-sm ${
-                                daysUntilDue < 0
-                                  ? "text-destructive font-medium"
-                                  : daysUntilDue <= 3
-                                  ? "text-warning"
-                                  : "text-muted-foreground"
-                              }`}
-                            >
-                              {daysUntilDue < 0
-                                ? `${Math.abs(daysUntilDue)}d overdue`
-                                : daysUntilDue === 0
-                                ? "Today"
-                                : `${daysUntilDue}d`}
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground text-sm">-</span>
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                Delete
+                              </DropdownMenuItem>
+                            </>
                           )}
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">{vuln.source || "—"}</TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-                </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-      <VulnFormModal open={createOpen} onOpenChange={(o) => setCreateOpen(o)} initialAssetId={createForAsset} onSaved={() => { fetchVulns(); }} />
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      <VulnFormModal
+        open={createOpen}
+        onOpenChange={(o) => {
+          setCreateOpen(o);
+          if (!o) setEditVuln(null);
+        }}
+        initialAssetId={createForAsset}
+        onSaved={() => { fetchVulns(); }}
+        vulnerability={editVuln}
+      />
+
+      <ConfirmDeleteDialog
+        open={!!deleteVuln}
+        onOpenChange={(o) => { if (!o) setDeleteVuln(null); }}
+        title="Delete Vulnerability"
+        description={deleteVuln ? (deleteCounts !== null
+          ? `This permanently deletes ${deleteVuln.title}. ${deleteCounts} asset links will be removed. The assets themselves are not deleted.`
+          : `This permanently deletes ${deleteVuln.title}. Asset links will be removed. The assets themselves are not deleted.`
+        ) : undefined}
+        onConfirm={handleDelete}
+        loading={deleting}
+      />
     </div>
   );
 }
