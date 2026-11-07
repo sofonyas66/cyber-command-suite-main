@@ -107,7 +107,7 @@ export default function AssetFormModal({ open, onOpenChange, asset = null, onSav
           return;
         }
         if (!data) {
-          toast.error('Delete failed or not permitted');
+           toast.error('Update failed or not permitted');
           return;
         }
         toast.success('Asset updated');

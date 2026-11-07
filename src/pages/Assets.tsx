@@ -221,24 +221,40 @@ export default function Assets() {
     return matchesSearch && matchesEnv && matchesCrit;
   });
 
+  const escapeCSV = (value: any): string => {
+    if (value === null || value === undefined) return "";
+    let str = String(value);
+    // Escape double quotes by doubling them
+    str = str.replace(/"/g, '""');
+    // Check for formula injection - prefix with single quote if starts with =, +, -, @
+    const trimmed = str.trimStart();
+    if (/^[=+\-@]/.test(trimmed)) {
+      str = "'" + str;
+    }
+    return str;
+  };
+
   const exportToCSV = () => {
     if (!filteredAssets.length) return;
     
     const headers = ["Hostname", "IP Address", "MAC Address", "OS", "Asset Type", "Owner", "Location", "Environment", "Criticality", "Last Seen"];
     const csvContent = [
       headers.join(","),
-      ...filteredAssets.map(asset => [
-        `"${asset.hostname || ''}"`,
-        `"${asset.ip_address || ''}"`,
-        `"${asset.mac_address || ''}"`,
-        `"${asset.os || ''}"`,
-        `"${asset.asset_type || ''}"`,
-        `"${asset.owner || ''}"`,
-        `"${asset.location || ''}"`,
-        `"${asset.environment || ''}"`,
-        `"${asset.criticality || ''}"`,
-        `"${asset.last_seen || ''}"`
-      ].join(","))
+      ...filteredAssets.map(asset => {
+        const row = [
+          asset.hostname || "",
+          asset.ip_address || "",
+          asset.mac_address || "",
+          asset.os || "",
+          asset.asset_type || "",
+          asset.owner || "",
+          asset.location || "",
+          asset.environment || "",
+          asset.criticality || "",
+          asset.last_seen || "",
+        ];
+        return row.map(escapeCSV).join(",");
+      })
     ].join("\n");
 
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
