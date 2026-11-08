@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import VulnLinkedAssetsDialog from "@/components/modals/VulnLinkedAssetsDialog";
 import VulnFormModal from "@/components/modals/VulnFormModal";
 import { supabase } from "@/integrations/supabase/client";
 import { useWorkspace } from "@/hooks/useWorkspace";
@@ -92,6 +93,8 @@ export default function Vulnerabilities() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [importWizardOpen, setImportWizardOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  const [assetsDialogOpen, setAssetsDialogOpen] = useState(false);
+  const [selectedVulnForAssets, setSelectedVulnForAssets] = useState<{ id: string; title: string } | null>(null);
   const [createForAsset, setCreateForAsset] = useState<string | null>(null);
   const [focusedVulnId, setFocusedVulnId] = useState<string | null>(null);
   const [editVuln, setEditVuln] = useState<Database["public"]["Tables"]["vulnerabilities"]["Row"] | null>(null);
@@ -102,6 +105,7 @@ export default function Vulnerabilities() {
   const { activeWorkspace, canDelete } = useWorkspace();
 
   const [vulnerabilities, setVulnerabilities] = useState<Vulnerability[] | null>(null);
+  const [assetCounts, setAssetCounts] = useState<Record<string, number>>({});
   const [vulnsError, setVulnsError] = useState<string | null>(null);
 
   const fetchVulns = async () => {
@@ -116,7 +120,24 @@ export default function Vulnerabilities() {
       if (activeWorkspace?.id) q = q.eq('workspace_id', activeWorkspace.id);
       const { data, error } = await q;
       if (error) throw error;
-      setVulnerabilities(data || []);
+      const vulns = data || [];
+      setVulnerabilities(vulns);
+
+      if (vulns.length > 0) {
+        const ids = vulns.map(v => v.id);
+        const { data: countData, error: countError } = await supabase
+          .from('vuln_assets')
+          .select('vulnerability_id')
+          .in('vulnerability_id', ids);
+        
+        if (!countError && countData) {
+          const counts: Record<string, number> = {};
+          countData.forEach(item => {
+            counts[item.vulnerability_id] = (counts[item.vulnerability_id] || 0) + 1;
+          });
+          setAssetCounts(counts);
+        }
+      }
     } catch (err: unknown) {
       console.error('Failed to load vulnerabilities', err);
       setVulnsError(err instanceof Error ? err.message : String(err));
@@ -346,6 +367,7 @@ export default function Vulnerabilities() {
                 {/* TODO: affected_assets count from vuln_assets join table (follow-up) */}
                 <TableHead>SLA Due</TableHead>
                 <TableHead>Source</TableHead>
+                <TableHead>Assets</TableHead>
                 <TableHead className="w-[50px]"></TableHead>
               </TableRow>
             </TableHeader>
@@ -419,6 +441,11 @@ export default function Vulnerabilities() {
                       <span className="text-muted-foreground text-sm">{vuln.source || "—"}</span>
                     </TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
+                      <Badge variant="outline" className="font-mono">
+                        {assetCounts[vuln.id] || "—"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
@@ -436,6 +463,12 @@ export default function Vulnerabilities() {
                               setCreateOpen(true);
                             }}>
                             Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => {
+                            setSelectedVulnForAssets({ id: vuln.id, title: vuln.title });
+                            setAssetsDialogOpen(true);
+                          }}>
+                            Manage assets
                           </DropdownMenuItem>
                           {canDelete && (
                             <>
@@ -471,6 +504,12 @@ export default function Vulnerabilities() {
         initialAssetId={createForAsset}
         onSaved={() => { fetchVulns(); }}
         vulnerability={editVuln}
+      />
+      <VulnLinkedAssetsDialog
+        open={assetsDialogOpen}
+        onOpenChange={setAssetsDialogOpen}
+        vulnerability={selectedVulnForAssets}
+        onChanged={() => fetchVulns()}
       />
 
       <ConfirmDeleteDialog
