@@ -7,11 +7,13 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { AlertTriangle, Loader2, Plus } from "lucide-react";
+import { AlertTriangle, Loader2, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useWorkspace } from "@/hooks/useWorkspace";
+import { getErrorMessage } from "@/lib/errors";
 import type { Json, Database } from "@/integrations/supabase/types";
 
 // Helper to convert values to Json for Supabase columns
@@ -117,6 +119,7 @@ export default function IncidentDetailPanel({
   onUpdate,
 }: IncidentDetailPanelProps) {
   const { user } = useAuth();
+  const { activeWorkspace } = useWorkspace();
 
   // Full fetched incident record state & loading state
   const [loadingIncident, setLoadingIncident] = useState(false);
@@ -154,6 +157,10 @@ export default function IncidentDetailPanel({
   const [assets, setAssets] = useState<Asset[]>([]);
   const [loadingAssets, setLoadingAssets] = useState(false);
   const [assetError, setAssetError] = useState<string | null>(null);
+  
+  // Available assets for linking
+  const [availableAssets, setAvailableAssets] = useState<Asset[]>([]);
+  const [loadingAvailableAssets, setLoadingAvailableAssets] = useState(false);
 
   // Timeline state
   const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
@@ -276,6 +283,144 @@ export default function IncidentDetailPanel({
       }
     })();
   }, [incident?.id]);
+
+  // Fetch available assets for linking
+  const fetchAvailableAssets = async () => {
+    if (!activeWorkspace?.id) return;
+    setLoadingAvailableAssets(true);
+    try {
+      const { data, error } = await supabase
+        .from("assets")
+        .select("id, hostname, ip_address")
+        .eq("workspace_id", activeWorkspace.id)
+        .order("hostname")
+        .limit(500);
+
+      if (error) throw error;
+      
+      const linkedIds = new Set(assets.map(a => a.id));
+	setAvailableAssets(
+	  (data || [])
+	    .filter((a) => !linkedIds.has(a.id))
+	    .map((a) => ({
+	      id: a.id,
+	      hostname: a.hostname,
+	      ip_address: a.ip_address == null ? null : String(a.ip_address),
+	    }))
+	);
+    } catch (err) {
+      console.error("Error fetching available assets:", err);
+    } finally {
+      setLoadingAvailableAssets(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAvailableAssets();
+  }, [activeWorkspace?.id, assets]);
+
+  const handleLinkAsset = async (assetId: string) => {
+    if (!incident?.id) return;
+    try {
+      const { data, error } = await supabase
+        .from("incident_assets")
+        .insert([{ incident_id: incident.id, asset_id: assetId }])
+        .select("assets(id, hostname, ip_address)");
+
+      if (error) {
+        if (error.code === "23505") {
+          toast.error("Already linked");
+        } else {
+          toast.error(getErrorMessage(error));
+        }
+        return;
+      }
+
+      if (!data || data.length !== 1 || !data[0].assets) {
+        toast.error("Link failed");
+        return;
+      }
+
+      const linkedAsset = data[0].assets as Asset;
+      setAssets((prev) => [...prev, linkedAsset]);
+      toast.success("Asset linked");
+      onUpdate?.();
+
+      // Add to timeline
+      try {
+        const newEntry: TimelineEvent = {
+          timestamp: new Date().toISOString(),
+          action: "Asset linked",
+          description: linkedAsset.hostname || "Unknown Asset",
+          actor: user?.email || user?.id,
+        };
+        const updatedTimeline = [...timeline, newEntry];
+        const { data: timelineData, error: timelineError } = await supabase
+          .from("incidents")
+          .update({ timeline: toJson(updatedTimeline) })
+          .eq("id", incident.id)
+          .select()
+          .single();
+
+        if (timelineError) throw timelineError;
+        setTimeline(parseTimeline(timelineData.timeline as Json | null));
+      } catch (err) {
+        toast.error(`Failed to update timeline: ${getErrorMessage(err)}`);
+      }
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err));
+    }
+  };
+
+  const handleUnlinkAsset = async (assetId: string) => {
+    if (!incident?.id) return;
+    try {
+      const { data, error } = await supabase
+        .from("incident_assets")
+        .delete()
+        .eq("incident_id", incident.id)
+        .eq("asset_id", assetId)
+        .select();
+
+      if (error) {
+        toast.error(getErrorMessage(error));
+        return;
+      }
+
+      if (!data || data.length !== 1) {
+        toast.error("Unlink failed or not permitted");
+        return;
+      }
+
+      setAssets((prev) => prev.filter((a) => a.id !== assetId));
+      onUpdate?.();
+
+      // Add to timeline
+      try {
+        const unlinkedAsset = assets.find(a => a.id === assetId);
+        const newEntry: TimelineEvent = {
+          timestamp: new Date().toISOString(),
+          action: "Asset unlinked",
+          description: unlinkedAsset?.hostname || "Unknown Asset",
+          actor: user?.email || user?.id,
+        };
+        const updatedTimeline = [...timeline, newEntry];
+        const { data: timelineData, error: timelineError } = await supabase
+          .from("incidents")
+          .update({ timeline: toJson(updatedTimeline) })
+          .eq("id", incident.id)
+          .select()
+          .single();
+
+        if (timelineError) throw timelineError;
+        setTimeline(parseTimeline(timelineData.timeline as Json | null));
+      } catch (err) {
+        toast.error(`Failed to update timeline: ${getErrorMessage(err)}`);
+      }
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err));
+    }
+  };
 
   const handleFieldChange = (field: keyof typeof formData, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -618,13 +763,43 @@ export default function IncidentDetailPanel({
                   ) : (
                     <div className="grid grid-cols-2 gap-2">
                       {assets.map((a) => (
-                        <div key={a.id} className="p-2 rounded-md border bg-muted/30 text-sm">
-                          <p className="font-medium">{a.hostname || "Unknown"}</p>
-                          <p className="text-xs text-muted-foreground">{a.ip_address || "—"}</p>
+                        <div key={a.id} className="flex items-center justify-between p-2 rounded-md border bg-muted/30 text-sm">
+                          <div>
+                            <p className="font-medium">{a.hostname || "Unknown"}</p>
+                            <p className="text-xs text-muted-foreground">{a.ip_address ? String(a.ip_address) : "—"}</p>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                            onClick={() => handleUnlinkAsset(a.id)}
+                          >
+                            <X className="h-4 w-4" />
+                            <span className="sr-only">Unlink asset</span>
+                          </Button>
                         </div>
                       ))}
                     </div>
                   )}
+
+                  {/* Add Asset Select */}
+                  <div className="mt-3">
+                    <Select
+                      onValueChange={(val) => handleLinkAsset(val)}
+                      disabled={loadingAvailableAssets}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder={loadingAvailableAssets ? "Loading assets..." : "Add asset..."} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableAssets.map((a) => (
+                          <SelectItem key={a.id} value={a.id}>
+                            {a.hostname || "Unknown"} ({a.ip_address || "—"})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
 
                 <Separator />
