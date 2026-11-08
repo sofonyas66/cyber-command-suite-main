@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import Papa from "papaparse";
 import {
   Dialog,
   DialogContent,
@@ -11,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -42,6 +44,7 @@ import { useWorkspace } from "@/hooks/useWorkspace";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { addDays } from "date-fns";
+import { Database } from "@/integrations/supabase/types";
 
 interface VulnImportWizardProps {
   open: boolean;
@@ -141,6 +144,8 @@ export function VulnImportWizard({ open, onOpenChange, onImportComplete }: VulnI
   const [isProcessing, setIsProcessing] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
   const [scannerType, setScannerType] = useState<"nessus" | "qualys" | "custom">("custom");
+  const [skipInformational, setSkipInformational] = useState(true);
+  const [skipStats, setSkipStats] = useState({ noTitle: 0, informational: 0, hostMatched: 0, hostUnmatched: 0 });
 
   const resetWizard = () => {
     setStep("upload");
@@ -163,51 +168,12 @@ export function VulnImportWizard({ open, onOpenChange, onImportComplete }: VulnI
     setIsProcessing(false);
     setImportProgress(0);
     setScannerType("custom");
+    setSkipStats({ noTitle: 0, informational: 0, hostMatched: 0, hostUnmatched: 0 });
   };
 
   const handleClose = () => {
     resetWizard();
     onOpenChange(false);
-  };
-
-  const parseCSV = (text: string): { headers: string[]; rows: ParsedRow[] } => {
-    const lines = text.split(/\r?\n/).filter(line => line.trim());
-    if (lines.length === 0) return { headers: [], rows: [] };
-
-    // Simple CSV parsing (handles quoted values)
-    const parseLine = (line: string): string[] => {
-      const result: string[] = [];
-      let current = "";
-      let inQuotes = false;
-
-      for (let i = 0; i < line.length; i++) {
-        const char = line[i];
-        if (char === '"') {
-          inQuotes = !inQuotes;
-        } else if (char === "," && !inQuotes) {
-          result.push(current.trim());
-          current = "";
-        } else {
-          current += char;
-        }
-      }
-      result.push(current.trim());
-      return result;
-    };
-
-    const headerLine = parseLine(lines[0]);
-    const dataRows: ParsedRow[] = [];
-
-    for (let i = 1; i < lines.length; i++) {
-      const values = parseLine(lines[i]);
-      const row: ParsedRow = {};
-      headerLine.forEach((header, index) => {
-        row[header] = values[index] || "";
-      });
-      dataRows.push(row);
-    }
-
-    return { headers: headerLine, rows: dataRows };
   };
 
   const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -219,35 +185,49 @@ export function VulnImportWizard({ open, onOpenChange, onImportComplete }: VulnI
 
     try {
       const text = await uploadedFile.text();
-      const { headers: parsedHeaders, rows: parsedRows } = parseCSV(text);
       
-      setHeaders(parsedHeaders);
-      setRows(parsedRows);
+      Papa.parse(text, {
+        header: true,
+        skipEmptyLines: "greedy",
+        delimiter: "", // auto-detect
+        complete: (results) => {
+          const parsedHeaders = results.meta.fields?.map(h => h.trim()) || [];
+          const parsedRows = results.data as ParsedRow[];
+          
+          setHeaders(parsedHeaders);
+          setRows(parsedRows);
 
-      // Auto-detect scanner type based on headers
-      if (parsedHeaders.includes("Plugin ID") && parsedHeaders.includes("Risk")) {
-        setScannerType("nessus");
-        applyPreset("nessus", parsedHeaders);
-      } else if (parsedHeaders.includes("QID") && parsedHeaders.includes("Severity")) {
-        setScannerType("qualys");
-        applyPreset("qualys", parsedHeaders);
-      }
+          // Auto-detect scanner type based on headers
+          if (parsedHeaders.includes("Plugin ID") && parsedHeaders.includes("Risk")) {
+            setScannerType("nessus");
+            applyPreset("nessus", parsedHeaders);
+          } else if (parsedHeaders.includes("QID") && parsedHeaders.includes("Severity")) {
+            setScannerType("qualys");
+            applyPreset("qualys", parsedHeaders);
+          }
 
-      toast.success(`Parsed ${parsedRows.length} rows from CSV`);
+          toast.success(`Parsed ${parsedRows.length} rows, ${parsedHeaders.length} columns from CSV`);
+          setIsProcessing(false);
+        },
+        error: (error) => {
+          toast.error("Failed to parse CSV file: " + error.message);
+          setIsProcessing(false);
+        }
+      });
     } catch (error) {
-      toast.error("Failed to parse CSV file");
-    } finally {
+      toast.error("Failed to read CSV file");
       setIsProcessing(false);
     }
   }, []);
 
   const applyPreset = (type: "nessus" | "qualys", availableHeaders: string[]) => {
     const preset = type === "nessus" ? NESSUS_PRESETS : QUALYS_PRESETS;
-    const newMapping: ColumnMapping = { ...mapping };
+    const newMapping = { ...mapping };
 
-    Object.entries(preset).forEach(([field, headerName]) => {
-      if (availableHeaders.includes(headerName as string)) {
-        (newMapping as any)[field] = headerName;
+    (Object.keys(preset) as Array<keyof ColumnMapping>).forEach((field) => {
+      const headerName = preset[field];
+      if (headerName && availableHeaders.includes(headerName)) {
+        newMapping[field] = headerName;
       }
     });
 
@@ -255,19 +235,26 @@ export function VulnImportWizard({ open, onOpenChange, onImportComplete }: VulnI
   };
 
   const isValidCVSS = (value: string): boolean => {
-    if (!value || value.trim() === '') return true; // allow empty/null
+    if (!value || value.trim() === '') return true;
     const num = parseFloat(value);
     return !isNaN(num) && num >= 0 && num <= 10 && value.match(/^\d+(\.\d)?$/) !== null;
   };
 
   const normalizeSeverity = (value: string): string => {
-    const lower = value.toLowerCase().trim();
-    if (lower.includes("critical") || lower === "4") return "critical";
-    if (lower.includes("high") || lower === "3") return "high";
-    if (lower.includes("medium") || lower.includes("med") || lower === "2") return "medium";
-    if (lower.includes("low") || lower === "1") return "low";
-    if (lower.includes("info") || lower === "0") return "informational";
-    return "medium";
+    const val = value.trim().toLowerCase();
+    if (val === "critical" || val === "5") return "critical";
+    if (val === "high" || val === "4") return "high";
+    if (val === "medium" || val === "3") return "medium";
+    if (val === "low" || val === "2") return "low";
+    if (["none", "log", "info", "informational", "0", "1"].includes(val) || val.includes("info")) return "informational";
+    return "informational"; // fallback to informational instead of medium
+  };
+
+  const extractCVEs = (text: string): string => {
+    if (!text) return "";
+    const matches = text.match(/CVE-\d{4}-\d{4,}/gi);
+    if (!matches) return "";
+    return Array.from(new Set(matches.map(c => c.toUpperCase()))).join(", ");
   };
 
   const processDeduplication = async () => {
@@ -288,81 +275,102 @@ export function VulnImportWizard({ open, onOpenChange, onImportComplete }: VulnI
 
       const existingMap = new Map<string, { id: string; title: string }>();
       existingVulns?.forEach(v => {
-        // Create key from title (as proxy for plugin_id since we don't store it)
         existingMap.set(v.title.toLowerCase(), { id: v.id, title: v.title });
       });
 
       const assetByIp = new Map<string, string>();
       const assetByHostname = new Map<string, string>();
       existingAssets?.forEach(a => {
-        if (a.ip_address) assetByIp.set(String(a.ip_address), a.id);
-        if (a.hostname) assetByHostname.set(a.hostname.toLowerCase(), a.id);
+        if (a.ip_address) assetByIp.set(String(a.ip_address).trim(), a.id);
+        if (a.hostname) assetByHostname.set(a.hostname.trim().toLowerCase(), a.id);
       });
 
-      // Group by plugin_id + deduplicate hosts
       const vulnMap = new Map<string, DeduplicatedVuln>();
+      let noTitleCount = 0;
+      let infoCount = 0;
+      const matchedAssetIds = new Set<string>();
+      const allAssetLinkAttempts = new Set<string>();
 
       rows.forEach(row => {
-        const pluginId = row[mapping.plugin_id] || row[mapping.title] || "";
-        const hostIp = row[mapping.host_ip] || "";
-        const hostname = row[mapping.hostname] || "";
-        const title = row[mapping.title] || "";
+        const rawTitle = row[mapping.title] || "";
+        const title = rawTitle.trim();
+        if (!title) {
+          noTitleCount++;
+          return;
+        }
+
+        const severity = normalizeSeverity(row[mapping.severity] || "");
+        if (skipInformational && severity === "informational") {
+          infoCount++;
+          return;
+        }
+
+        const pluginId = (row[mapping.plugin_id] || title).trim();
+        const hostIp = (row[mapping.host_ip] || "").trim();
+        const hostname = (row[mapping.hostname] || "").trim();
         
         const key = `${pluginId}-${title}`.toLowerCase();
         
         const cvssValue = row[mapping.cvss_score];
         const cvssValid = isValidCVSS(cvssValue);
         
+        const assetId = (hostIp ? assetByIp.get(hostIp) : null) || (hostname ? assetByHostname.get(hostname.toLowerCase()) : null);
+        
+        if (hostIp || hostname) {
+          allAssetLinkAttempts.add(`${hostIp}|${hostname}`);
+          if (assetId) matchedAssetIds.add(`${hostIp}|${hostname}`);
+        }
+
         if (vulnMap.has(key)) {
-      // Add host to existing vuln
-      const existing = vulnMap.get(key)!;
-      const hostExists = existing.affected_hosts.some(
-        h => h.ip === hostIp && h.hostname === hostname
-      );
-      if (!hostExists && (hostIp || hostname)) {
-        existing.affected_hosts.push({ ip: hostIp, hostname });
-        // Link asset
-        const assetId = assetByIp.get(hostIp) || assetByHostname.get(hostname.toLowerCase());
-        if (assetId && !existing.linkedAssets.includes(assetId)) {
-          existing.linkedAssets.push(assetId);
-        }
-        // If the new row has invalid CVSS, mark the vuln as invalid
-        if (!cvssValid) {
-          existing.cvssInvalid = true;
-        }
-      }
+          const existing = vulnMap.get(key)!;
+          const hostExists = existing.affected_hosts.some(
+            h => h.ip === hostIp && h.hostname === hostname
+          );
+          if (!hostExists && (hostIp || hostname)) {
+            existing.affected_hosts.push({ ip: hostIp, hostname });
+            if (assetId && !existing.linkedAssets.includes(assetId)) {
+              existing.linkedAssets.push(assetId);
+            }
+            if (!cvssValid) {
+              existing.cvssInvalid = true;
+            }
+          }
         } else {
-      // Create new dedup entry
-      const severity = normalizeSeverity(row[mapping.severity] || "");
-      const linkedAssets: string[] = [];
-          
-      const assetId = assetByIp.get(hostIp) || assetByHostname.get(hostname.toLowerCase());
-      if (assetId) linkedAssets.push(assetId);
+          const linkedAssets: string[] = [];
+          if (assetId) linkedAssets.push(assetId);
 
-      const existingVuln = existingMap.get(title.toLowerCase());
+          const existingVuln = existingMap.get(title.toLowerCase());
+          const cve_id = extractCVEs(row[mapping.cve_id] || "");
 
-      vulnMap.set(key, {
-        key,
-        title,
-        cve_id: row[mapping.cve_id] || null,
-        cvss_score: cvssValue && cvssValid ? parseFloat(cvssValue) : null,
-        severity,
-        description: row[mapping.description] || null,
-        solution: row[mapping.solution] || null,
-        source: row[mapping.source] || scannerType.charAt(0).toUpperCase() + scannerType.slice(1),
-        plugin_id: pluginId,
-        affected_hosts: hostIp || hostname ? [{ ip: hostIp, hostname }] : [],
-        isNew: !existingVuln,
-        existingId: existingVuln?.id,
-        linkedAssets,
-        cvssInvalid: !cvssValid && !!cvssValue,
-      });
+          vulnMap.set(key, {
+            key,
+            title,
+            cve_id,
+            cvss_score: cvssValue && cvssValid ? parseFloat(cvssValue) : null,
+            severity,
+            description: row[mapping.description] || null,
+            solution: row[mapping.solution] || null,
+            source: row[mapping.source] || scannerType.charAt(0).toUpperCase() + scannerType.slice(1),
+            plugin_id: pluginId,
+            affected_hosts: hostIp || hostname ? [{ ip: hostIp, hostname }] : [],
+            isNew: !existingVuln,
+            existingId: existingVuln?.id,
+            linkedAssets,
+            cvssInvalid: !cvssValid && !!cvssValue,
+          });
         }
       });
 
+      setSkipStats({ 
+        noTitle: noTitleCount, 
+        informational: infoCount,
+        hostMatched: matchedAssetIds.size,
+        hostUnmatched: allAssetLinkAttempts.size - matchedAssetIds.size
+      });
       setDeduplicated(Array.from(vulnMap.values()));
       setStep("preview");
     } catch (error) {
+      console.error("Deduplication error:", error);
       toast.error("Failed to process vulnerabilities");
     } finally {
       setIsProcessing(false);
@@ -389,7 +397,6 @@ export function VulnImportWizard({ open, onOpenChange, onImportComplete }: VulnI
       for (const vuln of deduplicated) {
         try {
           if (vuln.isNew) {
-            // Create new vulnerability
             const slaDueDate = addDays(new Date(), SLA_DAYS[vuln.severity] || 30);
             
             const { data: newVuln, error } = await supabase
@@ -398,7 +405,7 @@ export function VulnImportWizard({ open, onOpenChange, onImportComplete }: VulnI
                 title: vuln.title,
                 cve_id: vuln.cve_id,
                 cvss_score: vuln.cvss_score,
-                severity: vuln.severity as any,
+                severity: vuln.severity as Database["public"]["Enums"]["vuln_severity"],
                 description: vuln.description,
                 solution: vuln.solution,
                 source: vuln.source,
@@ -413,7 +420,6 @@ export function VulnImportWizard({ open, onOpenChange, onImportComplete }: VulnI
 
             if (error) throw error;
 
-            // Link assets
             if (newVuln && vuln.linkedAssets.length > 0) {
               const assetLinks = vuln.linkedAssets.map(assetId => ({
                 vulnerability_id: newVuln.id,
@@ -424,13 +430,11 @@ export function VulnImportWizard({ open, onOpenChange, onImportComplete }: VulnI
 
             created++;
           } else if (vuln.existingId) {
-            // Update existing vulnerability (update last_seen)
             await supabase
               .from("vulnerabilities")
               .update({ updated_at: new Date().toISOString() })
               .eq("id", vuln.existingId);
 
-            // Link new assets
             if (vuln.linkedAssets.length > 0) {
               const { data: existingLinks } = await supabase
                 .from("vuln_assets")
@@ -619,7 +623,7 @@ export function VulnImportWizard({ open, onOpenChange, onImportComplete }: VulnI
                       {label}
                     </Label>
                     <Select
-                      value={(mapping as any)[key] || ""}
+                      value={mapping[key as keyof ColumnMapping] || ""}
                       onValueChange={(value) =>
                         setMapping((prev) => ({ ...prev, [key]: value === "_none_" ? "" : value }))
                       }
@@ -638,6 +642,17 @@ export function VulnImportWizard({ open, onOpenChange, onImportComplete }: VulnI
                     </Select>
                   </div>
                 ))}
+              </div>
+
+              <div className="flex items-center space-x-2 pt-4">
+                <Checkbox 
+                  id="skip-info" 
+                  checked={skipInformational} 
+                  onCheckedChange={(checked) => setSkipInformational(!!checked)}
+                />
+                <Label htmlFor="skip-info" className="cursor-pointer">
+                  Skip informational findings (Log, Info, etc.)
+                </Label>
               </div>
 
               <div className="flex justify-between pt-4">
@@ -676,8 +691,18 @@ export function VulnImportWizard({ open, onOpenChange, onImportComplete }: VulnI
                 </Badge>
                 <Badge variant="outline" className="px-3 py-1">
                   <Link2 className="h-3 w-3 mr-1" />
-                  {linkedCount} linked to assets
+                  {skipStats.hostMatched} hosts matched to assets, {skipStats.hostUnmatched} unmatched
                 </Badge>
+                {skipStats.noTitle > 0 && (
+                  <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/30 px-3 py-1">
+                    {skipStats.noTitle} rows skipped (no title)
+                  </Badge>
+                )}
+                {skipStats.informational > 0 && (
+                  <Badge variant="outline" className="bg-muted text-muted-foreground px-3 py-1">
+                    {skipStats.informational} informational skipped
+                  </Badge>
+                )}
               </div>
 
               {/* Preview Table */}
@@ -760,7 +785,7 @@ export function VulnImportWizard({ open, onOpenChange, onImportComplete }: VulnI
                   Back
                 </Button>
                 <Button onClick={handleImport} disabled={deduplicated.length === 0 || deduplicated.some(v => v.cvssInvalid)}>
-                  Import {deduplicated.length} Vulnerabilities
+                  Import {deduplicated.length} Vulnerabilities (after skips)
                   <ArrowRight className="h-4 w-4 ml-2" />
                 </Button>
               </div>
