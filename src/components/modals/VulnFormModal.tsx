@@ -35,12 +35,22 @@ const isValidCVSS = (value: string): boolean => {
   return !isNaN(num) && num >= 0 && num <= 10 && value.match(/^\d+(\.\d)?$/) !== null; // max 1 decimal place
 };
 
+const validateCVEs = (value: string): { valid: boolean; normalized?: string } => {
+    if (!value || value.trim() === '') return { valid: true, normalized: '' };
+    const cves = value.split(/[, ]+/).filter(Boolean);
+    const valid = cves.every(cve => /^CVE-\d{4}-\d{4,}$/i.test(cve));
+    if (!valid) return { valid: false };
+    const normalized = cves.map(cve => cve.toUpperCase()).join(", ");
+    return { valid: true, normalized };
+  };
+
 export default function VulnFormModal({ open, onOpenChange, initialAssetId = null, onSaved, vulnerability = null }: VulnFormModalProps) {
   const { user } = useAuth();
   const { activeWorkspace } = useWorkspace();
   const isEditMode = !!vulnerability;
   const [loading, setLoading] = useState(false);
   const [cvssError, setCvssError] = useState<string | null>(null);
+  const [cveError, setCveError] = useState<string | null>(null);
 
   const [title, setTitle] = useState("");
   const [cveId, setCveId] = useState("");
@@ -95,8 +105,18 @@ export default function VulnFormModal({ open, onOpenChange, initialAssetId = nul
       return;
     }
 
+    // Validate CVE before submit
+    const cveValidation = validateCVEs(cveId);
+    if (!cveValidation.valid) {
+      setCveError('Invalid CVE ID format. Use CVE-YYYY-NNNN...');
+      return;
+    }
+    setCveError(null);
+    const normalizedCveId = cveValidation.normalized;
+
     // Validate CVSS before submit
     if (!isValidCVSS(cvssScore)) {
+      setCveError(null);
       setCvssError('CVSS must be between 0.0 and 10.0 with max 1 decimal place');
       return;
     }
@@ -108,7 +128,7 @@ export default function VulnFormModal({ open, onOpenChange, initialAssetId = nul
         // Edit mode: never send user_id or workspace_id
         const editPayload: Database["public"]["Tables"]["vulnerabilities"]["Update"] = {
           title,
-          cve_id: cveId || null,
+          cve_id: normalizedCveId || null,
           cvss_score: cvssScore ? parseFloat(cvssScore) : null,
           severity,
           status,
@@ -153,7 +173,7 @@ export default function VulnFormModal({ open, onOpenChange, initialAssetId = nul
           user_id: user!.id,
           workspace_id: activeWorkspace!.id,
           title,
-          cve_id: cveId || null,
+          cve_id: normalizedCveId || null,
           cvss_score: cvssScore ? parseFloat(cvssScore) : null,
           severity,
           status,
@@ -206,7 +226,21 @@ export default function VulnFormModal({ open, onOpenChange, initialAssetId = nul
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>CVE ID</Label>
-              <Input value={cveId} onChange={(e) => setCveId(e.target.value)} />
+              <Input
+                value={cveId}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setCveId(val);
+                  if (val && !validateCVEs(val).valid) {
+                    setCveError('Invalid CVE ID format');
+                  } else {
+                    setCveError(null);
+                  }
+                }}
+              />
+              {cveError && (
+                <p className="text-sm text-destructive" role="alert">{cveError}</p>
+              )}
             </div>
             <div className="space-y-2">
               <Label>CVSS</Label>
