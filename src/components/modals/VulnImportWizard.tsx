@@ -305,11 +305,14 @@ export function VulnImportWizard({ open, onOpenChange, onImportComplete }: VulnI
           return;
         }
 
-        const pluginId = (row[mapping.plugin_id] || title).trim();
+        const pluginId = (row[mapping.plugin_id] || "").trim();
         const hostIp = (row[mapping.host_ip] || "").trim();
         const hostname = (row[mapping.hostname] || "").trim();
         
-        const key = `${pluginId}-${title}`.toLowerCase();
+        // Use plugin_id if it exists, otherwise fallback to title.
+        // When plugin_id is empty, group by title (or title + CVE).
+        const identifier = pluginId ? `${pluginId}-${title}` : `${title}-${row[mapping.cve_id] || ""}`;
+        const key = identifier.toLowerCase();
         
         const cvssValue = row[mapping.cvss_score];
         const cvssValid = isValidCVSS(cvssValue);
@@ -608,7 +611,7 @@ export function VulnImportWizard({ open, onOpenChange, onImportComplete }: VulnI
               <div className="grid grid-cols-2 gap-4">
                 {[
                   { key: "title", label: "Title *", required: true },
-                  { key: "plugin_id", label: "Plugin ID *", required: true },
+                  { key: "plugin_id", label: "Plugin ID", required: false },
                   { key: "host_ip", label: "Host IP", required: false },
                   { key: "hostname", label: "Hostname", required: false },
                   { key: "cve_id", label: "CVE ID", required: false },
@@ -662,7 +665,7 @@ export function VulnImportWizard({ open, onOpenChange, onImportComplete }: VulnI
                 </Button>
                 <Button
                   onClick={processDeduplication}
-                  disabled={!mapping.title || !mapping.plugin_id || isProcessing}
+                  disabled={!mapping.title || isProcessing}
                 >
                   {isProcessing ? (
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
